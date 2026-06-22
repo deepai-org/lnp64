@@ -7,9 +7,11 @@
 # signed-32 immediate adjusts SP and forms frame addresses directly.
 # v2 callee-saved (preserved) set s0..s9 = r18..r27; the other allocatable GPRs
 # (r2-r17, r28-r30) are caller-clobbered.
+# FDR capabilities are NOT a register file: they are a hardware/Capability-Engine
+# table named by generation-tagged integer handles carried in GPRs, so there is
+# no fdr register class. fpr is reserved for a future hardware-FP extension (not
+# yet bound to a value type); v1 has no vector class.
 gpr|r0-r31|64|r2-r30|r0,r1,r31|integer_pointer_status_ra_r1_callee_saved_r18_r27|dwarf_gpr_r0_r31
-fdr|fd0-fd255|capability|fd0-fd255|none|authority_object_slots|not_address_unwind_registers
 fpr|f0-f31|implementation_defined|f0-f31|none|future_floating_point|dwarf_fpr_f0_f31
-vr|v0-v15|implementation_defined|v0-v15|none|future_vector|dwarf_vr_v0_v15
 pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC,CRED_PROFILE,CRED_HANDLE|64_control|named_only|none|process_thread_metadata|named_pseudo_registers
 special|TP|64|none|none|thread_pointer_only_lr_and_flags_deleted_in_v2|dwarf_special_tp

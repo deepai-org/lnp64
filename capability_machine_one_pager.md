@@ -8,11 +8,14 @@ privilege.
 
 ## Core Model
 
-Programs hold unforgeable FDR capability registers. FDRs name
-streams, files, queues, counters, memory objects, DMA buffers, PCIe BARs, event
-queues, call gates, namespace roots, devices, and Resource Domains. Authority
-moves only through explicit capability transfer, narrowing, sealing, revocation,
-and returned-capability commits.
+Programs hold unforgeable capability *handles* that name slots in a
+hardware/Capability-Engine-managed FDR table; the handles are generation-tagged
+integer tokens carried in ordinary GPRs (they are not a CHERI-style program-
+allocatable register file). FDR slots name streams, files, queues, counters,
+memory objects, DMA buffers, PCIe BARs, event queues, call gates, namespace
+roots, devices, and Resource Domains. Authority moves only through explicit
+capability transfer, narrowing, sealing, revocation, and returned-capability
+commits — the Capability Engine, not a raw integer write, mints authority.
 
 The core ISA remains conventional for computation: registers, branches, calls,
 loads, stores, atomics, floating point, and vectors stay direct. The difference

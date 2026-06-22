@@ -1,9 +1,7 @@
 # LNP64 inline-asm constraint manifest v0.
 # Pipe-delimited fields: constraint|class|values|use
 r|gpr|r0-r31|integer_pointer_result_or_operand
-f|fdr|fd0-fd255|capability_operand
 d|fpr|f0-f31|floating_point_operand
-v|vr|v0-v15|vector_operand
 p|pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC,CRED_PROFILE,CRED_HANDLE|pcr_name_operand
 m|memory|base_gpr_plus_signed_offset|load_store_memory_operand
 i|immediate|signed_16_or_symbolic|small_immediate_or_relocatable_symbol

@@ -41,9 +41,9 @@ static const unsigned PCRTable[] = {
     LNP64::SIGMASK,    LNP64::SIGPENDING, LNP64::REALTIME_SEC,
     LNP64::REALTIME_NSEC, LNP64::CRED_PROFILE, LNP64::CRED_HANDLE};
 
-// Only GPR and PCR appear as instruction operands today (capabilities are
-// passed in GPRs); FDR/FPR/VR register classes have no instruction operands, so
-// the generated decoder never references their decode hooks.
+// Only GPR and PCR appear as instruction operands (capability handles are
+// ordinary GPR values; the reserved FPR class is not yet bound to any
+// instruction), so the generated decoder references only these decode hooks.
 static DecodeStatus DecodeGPRRegisterClass(MCInst &Inst, uint64_t RegNo,
                                            uint64_t, const void *) {
   if (RegNo > 31)

@@ -4,25 +4,17 @@ class LNP64Reg<bits<16> Enc, string Name> : Register<Name> {
 }
 
 class LNP64GPR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64FDR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
 class LNP64FPR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64VR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
 class LNP64PCR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
 
 foreach I = 0-31 in {
   def R#I : LNP64GPR<I, "r"#I>;
 }
 
-foreach I = 0-255 in {
-  def FD#I : LNP64FDR<I, "fd"#I>;
-}
-
+// Floating-point register file (reserved for a future hardware-FP extension;
+// v1 is integer-only with soft-float, so no instruction binds FPR yet).
 foreach I = 0-31 in {
   def F#I : LNP64FPR<I, "f"#I>;
-}
-
-foreach I = 0-15 in {
-  def V#I : LNP64VR<I, "v"#I>;
 }
 
 def PID : LNP64PCR<0, "PID">;
@@ -56,9 +48,12 @@ def GPR : RegisterClass<"LNP64", [i64], 64,
   }];
 }
 
-def FDR : RegisterClass<"LNP64", [i64], 64, (sequence "FD%u", 0, 255)>;
+// Reserved for a future hardware-FP extension; not yet bound to any value type
+// or instruction (v1 is integer-only / soft-float). FDR capabilities are NOT a
+// program-allocatable register file -- they are a hardware/Capability-Engine
+// table named by generation-tagged integer handles carried in GPRs -- so there
+// is deliberately no FDR register class; likewise no vector class in v1.
 def FPR : RegisterClass<"LNP64", [f64], 64, (sequence "F%u", 0, 31)>;
-def VR : RegisterClass<"LNP64", [v2i64], 128, (sequence "V%u", 0, 15)>;
 def PCR : RegisterClass<"LNP64", [i64], 64,
   (add PID, PPID, TID, TP, UID, GID, SIGMASK, SIGPENDING,
        REALTIME_SEC, REALTIME_NSEC, CRED_PROFILE, CRED_HANDLE)>;

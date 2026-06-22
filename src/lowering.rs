@@ -4596,13 +4596,16 @@ mod tests {
         let clang_driver_test = include_str!("../clang/test/Driver/lnp64.c");
 
         assert!(target_td.contains("def LNP64 : Target"));
-        for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "FLAGS", "R31"] {
+        // v2 register classes: GPR (the integer file), FPR (reserved for future
+        // hardware FP), PCR (named control regs). No FDR class (capabilities are
+        // GPR-held handles to a Capability-Engine table) and no VR in v1.
+        for required in ["GPR", "FPR", "PCR", "R31"] {
             assert!(
                 registers_td.contains(required),
                 "register TableGen missing {required}"
             );
         }
-        assert!(registers_td.contains(r#"sequence "FD%u", 0, 255"#));
+        assert!(!registers_td.contains("def FDR :") && !registers_td.contains("def VR :"));
         assert!(registers_td.contains("class LNP64GPR<bits<16> Enc"));
         assert!(calling_td.contains("CC_LNP64"));
         assert!(calling_td.contains("R2, R3, R4, R5, R6, R7, R8, R9"));
@@ -5052,7 +5055,7 @@ mod tests {
         assert!(clang_target_header.contains("setCPU(const std::string &Name)"));
         assert!(clang_target_header.contains("hasFeature(StringRef Feature)"));
         assert!(clang_target.contains("const char *LNP64TargetInfo::getClobbers() const"));
-        for constraint in ["case 'r'", "case 'f'", "case 'p'", "case 'm'", "case 'i'"] {
+        for constraint in ["case 'r'", "case 'd'", "case 'p'", "case 'm'", "case 'i'"] {
             assert!(
                 clang_target.contains(constraint),
                 "clang target missing asm constraint {constraint}"
@@ -7452,9 +7455,10 @@ mod tests {
             "toolchain/lnp64_static.ld"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
-        assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
+        // FDR capabilities are GPR-held handles (no register class); VR is gone
+        // in v1. fpr is reserved for a future hardware-FP extension.
+        assert!(!manifest.contains("\nfdr=") && !manifest.contains("\nvr="));
         assert_eq!(manifest_field(manifest, "fpr"), "f0-f31");
-        assert_eq!(manifest_field(manifest, "vr"), "v0-v15");
         for pcr in [
             "PID",
             "PPID",
@@ -8523,16 +8527,17 @@ mod tests {
             assert!(!debug.is_empty(), "empty debug register role for {class}");
         }
 
-        for class in ["gpr", "fdr", "fpr", "vr", "pcr", "special"] {
+        for class in ["gpr", "fpr", "pcr", "special"] {
             assert!(
                 classes.contains_key(class),
                 "missing register class {class}"
             );
         }
+        // No fdr/vr register classes: FDR capabilities are GPR-held handles, and
+        // v1 has no vector class.
+        assert!(!classes.contains_key("fdr") && !classes.contains_key("vr"));
         assert_eq!(classes["gpr"].0, manifest_field(target_manifest, "gpr"));
-        assert_eq!(classes["fdr"].0, manifest_field(target_manifest, "fdr"));
         assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
-        assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
         assert_eq!(classes["gpr"].1, "64");
         // v2/E8: allocatable r2-r30; reserved r0 (zero), r1 (ra) and r31 (sp).
         // r30 is now an ordinary allocatable temporary (no backend scratch).
@@ -8580,7 +8585,7 @@ mod tests {
             );
         }
         for (constraint, class, values, _usage) in inline_asm_rows(inline_asm_manifest) {
-            if ["gpr", "fdr", "fpr", "vr"].contains(&class) {
+            if ["gpr", "fpr"].contains(&class) {
                 assert_eq!(
                     classes[class].0, values,
                     "inline asm constraint {constraint} disagrees with register class {class}"
@@ -8705,14 +8710,12 @@ mod tests {
         }
 
         assert_eq!(constraints["r"], ("gpr", "r0-r31"));
-        assert_eq!(constraints["f"], ("fdr", "fd0-fd255"));
+        // No "f" (fdr) or "v" (vr) constraints: capabilities are GPR-held
+        // handles and v1 has no vector class. "d" is the FP-register constraint.
+        assert!(!constraints.contains_key("f") && !constraints.contains_key("v"));
         assert_eq!(
             constraints["d"],
             ("fpr", manifest_field(target_manifest, "fpr"))
-        );
-        assert_eq!(
-            constraints["v"],
-            ("vr", manifest_field(target_manifest, "vr"))
         );
         assert_eq!(
             constraints["p"],
@@ -8724,9 +8727,10 @@ mod tests {
         assert_eq!(constraints["m"], ("memory", "base_gpr_plus_signed_offset"));
         assert_eq!(constraints["i"], ("immediate", "signed_16_or_symbolic"));
         assert_clang_names_range("r", 31);
-        assert_clang_names_range("fd", 255);
+        // No fd0-fd255 (capabilities are GPR handles) or v0-v15 (no vector
+        // class in v1); f0-f31 stay (FP register names, reserved).
+        assert!(!clang_target.contains("\"fd0\"") && !clang_target.contains("\"v0\""));
         assert_clang_names_range("f", 31);
-        assert_clang_names_range("v", 15);
         for pcr in constraints["p"].1.split(',') {
             let name = format!(r#""{pcr}""#);
             assert!(
@@ -8734,7 +8738,7 @@ mod tests {
                 "Clang target register names missing PCR {name}"
             );
         }
-        for constraint in ["case 'r'", "case 'f'", "case 'd'", "case 'v'", "case 'p'"] {
+        for constraint in ["case 'r'", "case 'd'", "case 'p'"] {
             assert!(
                 clang_target.contains(constraint),
                 "Clang target missing inline asm constraint {constraint}"
