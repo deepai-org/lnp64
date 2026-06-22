@@ -4800,19 +4800,19 @@ mod tests {
         // (SelectNodeTo), resolved by the generic eliminateFrameIndex path --
         // no dedicated frame-address pseudo.
         assert!(dag_isel.contains("SelectNodeTo(Node, LNP64::ADDI"));
-        assert!(dag_isel.contains("SelectFrameIndexLoad"));
-        assert!(dag_isel.contains("SelectFrameIndexStore"));
+        // Frame-index loads/stores are matched declaratively via the FrameAddr
+        // ComplexPattern (folds a const displacement), not hand-written
+        // per-opcode selectors.
+        assert!(dag_isel.contains("SelectFrameAddr"));
+        assert!(!dag_isel.contains("SelectFrameIndexLoad"));
         assert!(dag_isel.contains("getTargetFrameIndex"));
-        assert!(dag_isel.contains("ISD::SEXTLOAD"));
-        assert!(dag_isel.contains("ISD::EXTLOAD"));
-        assert!(dag_isel.contains("MemVT == MVT::i1"));
-        assert!(dag_isel.contains("LNP64::LW"));
-        assert!(dag_isel.contains("LNP64::LH"));
-        assert!(dag_isel.contains("LNP64::LB"));
-        assert!(dag_isel.contains("LNP64::LWU"));
-        assert!(dag_isel.contains("LNP64::SW"));
-        assert!(dag_isel.contains("LNP64::SH"));
-        assert!(dag_isel.contains("LNP64::SB"));
+        // Frame-index load/store opcode selection is now declarative: the
+        // FrameAddr ComplexPattern + per-type Pat<>s in the .td, not a
+        // hand-written extension-type switch in the ISel C++.
+        assert!(instr_td.contains("def FrameAddr : ComplexPattern"));
+        assert!(instr_td.contains("(load (FrameAddr GPR:$base, simm32:$off))"));
+        assert!(instr_td.contains("(sextloadi16 (FrameAddr GPR:$base, simm32:$off))"));
+        assert!(instr_td.contains("(truncstorei8 GPR:$rs, (FrameAddr GPR:$base, simm32:$off))"));
         assert!(asm_printer.contains("RegisterAsmPrinter<LNP64AsmPrinter>"));
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
         assert!(asm_printer.contains("PrintAsmOperand"));

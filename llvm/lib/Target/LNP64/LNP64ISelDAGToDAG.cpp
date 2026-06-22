@@ -22,13 +22,37 @@ public:
 
   void Select(SDNode *Node) override;
   bool SelectFrameIndexValue(SDNode *Node);
-  bool SelectFrameIndexLoad(SDNode *Node);
-  bool SelectFrameIndexStore(SDNode *Node);
+  // ComplexPattern: match a frame-index address (bare `frameindex` or
+  // `frameindex + const`) into (base = TargetFrameIndex, offset). Lets the
+  // load/store TableGen patterns fold a constant displacement into the
+  // instruction immediate -- the generic eliminateFrameIndex path then resolves
+  // base -> r31 and the offset. Replaces the hand-written per-opcode
+  // load/store frame-index selectors.
+  bool SelectFrameAddr(SDValue Addr, SDValue &Base, SDValue &Offset);
 
 #include "LNP64GenDAGISel.inc"
 };
 
 } // end anonymous namespace
+
+bool LNP64DAGToDAGISel::SelectFrameAddr(SDValue Addr, SDValue &Base,
+                                        SDValue &Offset) {
+  SDLoc DL(Addr);
+  if (auto *FI = dyn_cast<FrameIndexSDNode>(Addr)) {
+    Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
+    Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
+    return true;
+  }
+  if (Addr.getOpcode() == ISD::ADD)
+    if (auto *FI = dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
+      if (auto *C = dyn_cast<ConstantSDNode>(Addr.getOperand(1)))
+        if (isInt<32>(C->getSExtValue())) {
+          Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
+          Offset = CurDAG->getTargetConstant(C->getSExtValue(), DL, MVT::i64);
+          return true;
+        }
+  return false;
+}
 
 bool LNP64DAGToDAGISel::SelectFrameIndexValue(SDNode *Node) {
   auto *FI = dyn_cast<FrameIndexSDNode>(Node);
@@ -49,92 +73,16 @@ bool LNP64DAGToDAGISel::SelectFrameIndexValue(SDNode *Node) {
   return true;
 }
 
-bool LNP64DAGToDAGISel::SelectFrameIndexLoad(SDNode *Node) {
-  auto *Load = dyn_cast<LoadSDNode>(Node);
-  if (!Load)
-    return false;
-
-  auto *FI = dyn_cast<FrameIndexSDNode>(Load->getBasePtr());
-  if (!FI)
-    return false;
-
-  unsigned Opcode;
-  EVT MemVT = Load->getMemoryVT();
-  if (MemVT == MVT::i64 && Load->getExtensionType() == ISD::NON_EXTLOAD)
-    Opcode = LNP64::LD;
-  else if (MemVT == MVT::i32 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::LW;
-  else if (MemVT == MVT::i16 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::LH;
-  else if (MemVT == MVT::i8 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::LB;
-  else if (MemVT == MVT::i32 &&
-           (Load->getExtensionType() == ISD::ZEXTLOAD ||
-            Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LWU;
-  else if (MemVT == MVT::i16 &&
-           (Load->getExtensionType() == ISD::ZEXTLOAD ||
-            Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LHU;
-  else if ((MemVT == MVT::i1 || MemVT == MVT::i8) &&
-           (Load->getExtensionType() == ISD::ZEXTLOAD ||
-            Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LBU;
-  else
-    return false;
-
-  SDLoc DL(Node);
-  SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
-  SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
-  SDValue Chain = Load->getChain();
-  SDNode *Selected =
-      CurDAG->getMachineNode(Opcode, DL, CurDAG->getVTList(MVT::i64, MVT::Other),
-                             {Base, Offset, Chain});
-  ReplaceNode(Node, Selected);
-  return true;
-}
-
-bool LNP64DAGToDAGISel::SelectFrameIndexStore(SDNode *Node) {
-  auto *Store = dyn_cast<StoreSDNode>(Node);
-  if (!Store)
-    return false;
-
-  auto *FI = dyn_cast<FrameIndexSDNode>(Store->getBasePtr());
-  if (!FI)
-    return false;
-
-  unsigned Opcode;
-  EVT MemVT = Store->getMemoryVT();
-  if (MemVT == MVT::i64 && !Store->isTruncatingStore())
-    Opcode = LNP64::SD;
-  else if (MemVT == MVT::i32 && Store->isTruncatingStore())
-    Opcode = LNP64::SW;
-  else if (MemVT == MVT::i16 && Store->isTruncatingStore())
-    Opcode = LNP64::SH;
-  else if ((MemVT == MVT::i1 || MemVT == MVT::i8) && Store->isTruncatingStore())
-    Opcode = LNP64::SB;
-  else
-    return false;
-
-  SDLoc DL(Node);
-  SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
-  SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
-  SDValue Value = Store->getValue();
-  SDValue Chain = Store->getChain();
-  SDNode *Selected = CurDAG->getMachineNode(Opcode, DL, MVT::Other,
-                                            {Value, Base, Offset, Chain});
-  ReplaceNode(Node, Selected);
-  return true;
-}
-
 void LNP64DAGToDAGISel::Select(SDNode *Node) {
   if (Node->isMachineOpcode()) {
     Node->setNodeId(-1);
     return;
   }
 
-  if (SelectFrameIndexLoad(Node) || SelectFrameIndexStore(Node) ||
-      SelectFrameIndexValue(Node))
+  // Frame-index loads/stores are matched declaratively via the FrameAddr
+  // ComplexPattern (see LNP64InstrInfo.td); only a bare frame-index *value*
+  // (address-of) needs the in-place ADDI selection here.
+  if (SelectFrameIndexValue(Node))
     return;
 
   SelectCode(Node);

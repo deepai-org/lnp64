@@ -650,6 +650,29 @@ def : Pat<(truncstorei8 GPR:$rs, GPR:$base), (SB GPR:$rs, GPR:$base, 0)>;
 def : Pat<(i64 (atomic_load_64 GPR:$base)), (LD GPR:$base, 0)>;
 def : Pat<(atomic_store_64 GPR:$base, GPR:$rs), (SD GPR:$rs, GPR:$base, 0)>;
 
+// Frame-index addressing. FrameAddr matches a bare `frameindex` or
+// `frameindex + const`, yielding (base = TargetFrameIndex, offset); the const
+// displacement is folded into the instruction immediate and eliminateFrameIndex
+// later rewrites the base to r31 + resolved offset. One declarative pattern per
+// access type replaces the hand-written per-opcode frame-index selectors.
+def FrameAddr : ComplexPattern<i64, 2, "SelectFrameAddr", [frameindex, add]>;
+def : Pat<(i64 (load (FrameAddr GPR:$base, simm32:$off))), (LD GPR:$base, simm32:$off)>;
+def : Pat<(i64 (zextloadi32 (FrameAddr GPR:$base, simm32:$off))), (LWU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (extloadi32 (FrameAddr GPR:$base, simm32:$off))), (LWU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (sextloadi32 (FrameAddr GPR:$base, simm32:$off))), (LW GPR:$base, simm32:$off)>;
+def : Pat<(i64 (zextloadi16 (FrameAddr GPR:$base, simm32:$off))), (LHU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (extloadi16 (FrameAddr GPR:$base, simm32:$off))), (LHU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (sextloadi16 (FrameAddr GPR:$base, simm32:$off))), (LH GPR:$base, simm32:$off)>;
+def : Pat<(i64 (zextloadi8 (FrameAddr GPR:$base, simm32:$off))), (LBU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (extloadi8 (FrameAddr GPR:$base, simm32:$off))), (LBU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (zextloadi1 (FrameAddr GPR:$base, simm32:$off))), (LBU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (extloadi1 (FrameAddr GPR:$base, simm32:$off))), (LBU GPR:$base, simm32:$off)>;
+def : Pat<(i64 (sextloadi8 (FrameAddr GPR:$base, simm32:$off))), (LB GPR:$base, simm32:$off)>;
+def : Pat<(store GPR:$rs, (FrameAddr GPR:$base, simm32:$off)), (SD GPR:$rs, GPR:$base, simm32:$off)>;
+def : Pat<(truncstorei32 GPR:$rs, (FrameAddr GPR:$base, simm32:$off)), (SW GPR:$rs, GPR:$base, simm32:$off)>;
+def : Pat<(truncstorei16 GPR:$rs, (FrameAddr GPR:$base, simm32:$off)), (SH GPR:$rs, GPR:$base, simm32:$off)>;
+def : Pat<(truncstorei8 GPR:$rs, (FrameAddr GPR:$base, simm32:$off)), (SB GPR:$rs, GPR:$base, simm32:$off)>;
+
 //===----------------------------------------------------------------------===//
 // Atomics (LR/SC) and fences.
 //===----------------------------------------------------------------------===//
