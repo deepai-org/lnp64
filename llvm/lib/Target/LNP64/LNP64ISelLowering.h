@@ -21,7 +21,6 @@ enum NodeType : unsigned {
   PULL,
   PUSH,
   WRAPPER,
-  SELECT_CC,
   RET_FLAG,
 };
 }

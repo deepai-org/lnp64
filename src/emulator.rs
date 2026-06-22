@@ -1684,6 +1684,12 @@ impl Machine {
             process.memory = replacement_memory;
             process.vmas = replacement_vmas;
             process.allocations.clear();
+            // Place heap above the ELF image so malloc never overlaps ELF text/data.
+            let image_end = process.vmas.iter()
+                .map(|vma| vma.start.saturating_add(vma.len))
+                .max()
+                .unwrap_or(HEAP_BASE);
+            process.heap_next = align_up_page(image_end);
             process.exec_entry_pc = entry_pc;
             process.exec_tls_base = tls_base;
             process.exec_startup_metadata_ptr = startup_metadata_ptr;
@@ -2020,6 +2026,14 @@ impl Machine {
             0x24 => Instr::Bge(b, c, branch_target_b()),
             0x25 => Instr::Bltu(b, c, branch_target_b()),
             0x26 => Instr::Bgeu(b, c, branch_target_b()),
+            // Fused compare-and-select: rd=a, ra=b(rs1), rb=c(rs2), rt=d(rs3),
+            // rf=e(rs4). Conditions mirror the branch family (0x21-0x26).
+            0x40 => Instr::Sel(SelCond::Eq, a, b, c, d, e),
+            0x41 => Instr::Sel(SelCond::Ne, a, b, c, d, e),
+            0x42 => Instr::Sel(SelCond::Lt, a, b, c, d, e),
+            0x43 => Instr::Sel(SelCond::Ge, a, b, c, d, e),
+            0x44 => Instr::Sel(SelCond::Ltu, a, b, c, d, e),
+            0x45 => Instr::Sel(SelCond::Geu, a, b, c, d, e),
             0x27 => Instr::Jal(a, branch_target_j()),
             0x28 => Instr::Jalr(a, b, imm_i),
             0x2b => Instr::Pull(a, FdReg(b.0), c, d),
@@ -2635,6 +2649,22 @@ impl Machine {
                     self.thread_mut()?.ip = ip;
                 }
             }
+            Instr::Sel(cc, dst, ra, rb, rt, rf) => {
+                // Fused compare-and-select (Class A datapath): a branch-free mux
+                // over a register compare. rd = (ra <cc> rb) ? rt : rf.
+                let x = self.read_reg(ra)?;
+                let y = self.read_reg(rb)?;
+                let taken = match cc {
+                    SelCond::Eq => x == y,
+                    SelCond::Ne => x != y,
+                    SelCond::Lt => (x as i64) < (y as i64),
+                    SelCond::Ge => (x as i64) >= (y as i64),
+                    SelCond::Ltu => x < y,
+                    SelCond::Geu => x >= y,
+                };
+                let v = if taken { self.read_reg(rt)? } else { self.read_reg(rf)? };
+                self.write_alu_reg(dst, v)?;
+            }
             // v2: the link is a normal GPR (r1). `ip` already advanced past this
             // instruction, so it is the return address (pc+8 in committed mode,
             // next index in structural mode).
@@ -2662,6 +2692,8 @@ impl Machine {
                 let addr = self.read_reg(addr)?;
                 let value = self.read_reg(src)?;
                 let success = self.reservation_addr == Some(addr);
+                if !success {
+                }
                 if success {
                     self.store_u64(addr, value)?;
                 }
@@ -3692,7 +3724,7 @@ impl Machine {
                 let tid = self.read_reg(dst)?;
                 if tid != -1i64 as u64 {
                     if let Some(thread) = self.threads.get_mut(&tid) {
-                        thread.regs[1] = arg;
+                        thread.regs[2] = arg;
                     }
                 }
             }
@@ -4956,13 +4988,6 @@ impl Machine {
                 .position(|candidate| matches!(candidate, FdHandle::Closed))
         };
         if let Some(fd) = fd {
-            let handle_name = match &handle {
-                FdHandle::TcpSocket { .. } => "TcpSocket", FdHandle::TcpListener { .. } => "TcpListener",
-                FdHandle::TcpStream(_) => "TcpStream", FdHandle::PipeReader(_) => "PipeReader",
-                FdHandle::PipeWriter(_) => "PipeWriter", FdHandle::File(_) => "File",
-                FdHandle::EventCounter { .. } => "EventCounter", FdHandle::Counter(_) => "Counter",
-                _ => "other" };
-            eprintln!("[emu] alloc_fd_handle -> fd={} handle={}", fd, handle_name);
             self.bump_fd_generation(fd)?;
             self.process_mut()?.fds[fd] = handle;
             let capability = self.fresh_fd_capability();
@@ -7456,7 +7481,6 @@ impl Machine {
             _ => return Err(22),
         };
         let listener = TcpListener::bind(&addr).map_err(|_| 98u64)?;
-        eprintln!("[emu] socket_listen: fd={} bound to {}", fd, addr);
         listener.set_nonblocking(true).map_err(|_| 5u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpListener {
             listener,
@@ -7675,13 +7699,6 @@ impl Machine {
         let Some(fd) = fd else {
             return Err(24);
         };
-        let handle_name = match &handle {
-            FdHandle::TcpSocket { .. } => "TcpSocket", FdHandle::TcpListener { .. } => "TcpListener",
-            FdHandle::TcpStream(_) => "TcpStream", FdHandle::PipeReader(_) => "PipeReader",
-            FdHandle::PipeWriter(_) => "PipeWriter", FdHandle::File(_) => "File",
-            FdHandle::EventCounter { .. } => "EventCounter", FdHandle::Counter(_) => "Counter",
-            _ => "other" };
-        eprintln!("[emu] install_object_fd auto -> fd={} handle={}", fd, handle_name);
         self.bump_fd_generation(fd).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
         let capability = self.fresh_fd_capability();
@@ -9756,24 +9773,16 @@ impl Machine {
 
     fn poll_fd_waiters(&mut self) {
         let waiters = std::mem::take(&mut self.fd_waiters);
-        let had_waiters = !waiters.is_empty();
-        if had_waiters {
-            eprintln!("[emu] poll_fd_waiters: {} waiters", waiters.len());
-        }
         for waiter in waiters {
-            eprintln!("[emu] checking waiter fd={} mask={}", waiter.fd, waiter.mask);
             let state = self
                 .with_thread_process(waiter.tid, |machine| {
                     if !machine.fd_generation_matches(waiter.fd, waiter.generation)? {
-                        eprintln!("[emu] fd={} stale generation", waiter.fd);
                         return Ok(FdWaiterState::Stale);
                     }
                     if let Err(errno) = machine.fd_right_errno(waiter.fd, CAP_RIGHT_POLL) {
-                        eprintln!("[emu] fd={} right error errno={}", waiter.fd, errno);
                         return Ok(FdWaiterState::Error(errno));
                     }
                     let ready = machine.fd_ready_for_mask(waiter.fd, waiter.mask)?;
-                    eprintln!("[emu] fd={} mask={} ready={}", waiter.fd, waiter.mask, ready);
                     if ready {
                         Ok(FdWaiterState::Ready)
                     } else {
@@ -9957,10 +9966,6 @@ impl Machine {
             return Ok(!self.process()?.inbox.is_empty());
         }
         let handle = &mut self.process_mut()?.fds[fd];
-        eprintln!("[emu] fd_read_ready fd={} handle_type={}", fd, match handle {
-            FdHandle::Closed => "Closed", FdHandle::TcpListener { .. } => "TcpListener",
-            FdHandle::TcpStream(_) => "TcpStream", FdHandle::TcpSocket { .. } => "TcpSocket",
-            _ => "other" });
         match handle {
             FdHandle::Stdin
             | FdHandle::File(_)
@@ -9977,10 +9982,8 @@ impl Machine {
                 if pending.is_some() {
                     return Ok(true);
                 }
-                eprintln!("[emu] fd_read_ready TcpListener: calling accept()");
                 match listener.accept() {
-                    Ok((stream, addr)) => {
-                        eprintln!("[emu] fd_read_ready TcpListener: accept Ok from {addr}");
+                    Ok((stream, _addr)) => {
                         stream
                             .set_nonblocking(false)
                             .map_err(|err| format!("TCP accepted stream blocking failed: {err}"))?;
@@ -9988,7 +9991,6 @@ impl Machine {
                         Ok(true)
                     }
                     Err(err) => {
-                        eprintln!("[emu] fd_read_ready TcpListener: accept err kind={:?}", err.kind());
                         if err.kind() == io::ErrorKind::WouldBlock {
                             Ok(false)
                         } else {

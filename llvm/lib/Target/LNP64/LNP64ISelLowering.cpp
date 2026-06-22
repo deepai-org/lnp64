@@ -90,8 +90,10 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::STACKRESTORE,      MVT::Other, Custom);
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
+  // select lowers to a generic select_cc (cond != 0); select_cc is matched
+  // directly to the fused sel.<cc> instructions in TableGen.
   setOperationAction(ISD::SELECT, MVT::i64, Custom);
-  setOperationAction(ISD::SELECT_CC, MVT::i64, Expand);
+  setOperationAction(ISD::SELECT_CC, MVT::i64, Legal);
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::VAARG, MVT::Other, Expand);
   setOperationAction(ISD::VACOPY, MVT::Other, Expand);
@@ -126,8 +128,6 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::PUSH";
   case LNP64ISD::WRAPPER:
     return "LNP64ISD::WRAPPER";
-  case LNP64ISD::SELECT_CC:
-    return "LNP64ISD::SELECT_CC";
   case LNP64ISD::RET_FLAG:
     return "LNP64ISD::RET_FLAG";
   default:
@@ -249,8 +249,8 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
                        getPointerTy(DAG.getDataLayout()), Target);
   }
   case ISD::SELECT: {
-    // Lower to an LNP64ISD::SELECT_CC against zero, expanded by the custom
-    // inserter into a branch diamond. Operands: (cond, true, false).
+    // (select cond, t, f) -> (select_cc cond, 0, t, f, NE). select_cc is Legal
+    // and matched to a fused sel.ne instruction. Operands: (cond, true, false).
     SDLoc DL(Op);
     SDValue Cond = Op.getOperand(0);
     SDValue TrueV = Op.getOperand(1);
@@ -258,9 +258,9 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     if (Cond.getValueType() != MVT::i64)
       Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i64, Cond);
     SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
-    SDValue CC = DAG.getConstant(ISD::SETNE, DL, MVT::i64);
-    SDValue Ops[] = {Cond, Zero, CC, TrueV, FalseV};
-    return DAG.getNode(LNP64ISD::SELECT_CC, DL, MVT::i64, Ops);
+    return DAG.getNode(ISD::SELECT_CC, DL, MVT::i64,
+                       {Cond, Zero, TrueV, FalseV,
+                        DAG.getCondCode(ISD::SETNE)});
   }
   case ISD::BRCOND: {
     SDLoc DL(Op);
@@ -332,25 +332,6 @@ void LNP64TargetLowering::ReplaceNodeResults(SDNode *N,
   }
 }
 
-// Map an integer condition code + (lhs,rhs) into a compare-and-branch opcode
-// that LNP64 implements natively, swapping operands where needed.
-static unsigned getBranchForCC(ISD::CondCode CC, bool &SwapOps) {
-  SwapOps = false;
-  switch (CC) {
-  case ISD::SETEQ:  return LNP64::BEQ;
-  case ISD::SETNE:  return LNP64::BNE;
-  case ISD::SETLT:  return LNP64::BLT;
-  case ISD::SETGE:  return LNP64::BGE;
-  case ISD::SETULT: return LNP64::BLTU;
-  case ISD::SETUGE: return LNP64::BGEU;
-  case ISD::SETGT:  SwapOps = true; return LNP64::BLT;
-  case ISD::SETLE:  SwapOps = true; return LNP64::BGE;
-  case ISD::SETUGT: SwapOps = true; return LNP64::BLTU;
-  case ISD::SETULE: SwapOps = true; return LNP64::BGEU;
-  default:
-    llvm_unreachable("LNP64 select only supports integer comparisons");
-  }
-}
 
 MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     MachineInstr &MI, MachineBasicBlock *BB) const {
@@ -370,46 +351,6 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
         .addImm(int32_t(Hi));
     MI.eraseFromParent();
     return BB;
-  }
-
-  if (MI.getOpcode() == LNP64::PseudoSELECT_CC) {
-    // operands: dst, lhs, rhs, cc(imm), trueV, falseV
-    MachineFunction *MF = BB->getParent();
-    const BasicBlock *LLVM_BB = BB->getBasicBlock();
-    MachineFunction::iterator It = ++BB->getIterator();
-
-    MachineBasicBlock *HeadMBB = BB;
-    MachineBasicBlock *IfFalseMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-    MachineBasicBlock *TailMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-    MF->insert(It, IfFalseMBB);
-    MF->insert(It, TailMBB);
-    TailMBB->splice(TailMBB->begin(), HeadMBB,
-                    std::next(MachineBasicBlock::iterator(MI)), HeadMBB->end());
-    TailMBB->transferSuccessorsAndUpdatePHIs(HeadMBB);
-    HeadMBB->addSuccessor(IfFalseMBB);
-    HeadMBB->addSuccessor(TailMBB);
-
-    ISD::CondCode CC = (ISD::CondCode)MI.getOperand(3).getImm();
-    bool SwapOps = false;
-    unsigned BrOpc = getBranchForCC(CC, SwapOps);
-    Register LHS = MI.getOperand(1).getReg();
-    Register RHS = MI.getOperand(2).getReg();
-    // Branch to TailMBB (taking trueV) when the condition holds.
-    BuildMI(HeadMBB, DL, TII.get(BrOpc))
-        .addReg(SwapOps ? RHS : LHS)
-        .addReg(SwapOps ? LHS : RHS)
-        .addMBB(TailMBB);
-
-    IfFalseMBB->addSuccessor(TailMBB);
-
-    BuildMI(*TailMBB, TailMBB->begin(), DL, TII.get(LNP64::PHI),
-            MI.getOperand(0).getReg())
-        .addReg(MI.getOperand(4).getReg())
-        .addMBB(HeadMBB)
-        .addReg(MI.getOperand(5).getReg())
-        .addMBB(IfFalseMBB);
-    MI.eraseFromParent();
-    return TailMBB;
   }
 
   llvm_unreachable("unexpected LNP64 custom inserter pseudo");

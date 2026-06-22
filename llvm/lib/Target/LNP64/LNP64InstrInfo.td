@@ -111,11 +111,6 @@ def SDT_LNP64Wrapper : SDTypeProfile<1, 1, [
   SDTCisSameAs<0, 1>, SDTCisPtrTy<0>
 ]>;
 def LNP64wrapper : SDNode<"LNP64ISD::WRAPPER", SDT_LNP64Wrapper>;
-def SDT_LNP64SelectCC : SDTypeProfile<1, 5, [
-  SDTCisSameAs<0, 1>, SDTCisSameAs<1, 2>, SDTCisVT<3, i64>,
-  SDTCisSameAs<0, 4>, SDTCisSameAs<0, 5>
-]>;
-def LNP64selectcc : SDNode<"LNP64ISD::SELECT_CC", SDT_LNP64SelectCC>;
 
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
     : Instruction {
@@ -371,18 +366,50 @@ def PseudoLI64
 }
 def : Pat<(i64 wide64_imm:$imm), (PseudoLI64 wide64_imm:$imm)>;
 
-// SELECT_CC pseudo: compare lhs/rhs under cc and pick trueV/falseV. Expanded by
-// the custom inserter into a compare-and-branch diamond.
-def PseudoSELECT_CC
-    : LNP64Inst<(outs GPR:$dst),
-                (ins GPR:$lhs, GPR:$rhs, i64imm:$cc, GPR:$truev, GPR:$falsev),
-                "pseudo_select_cc", "\t$dst, $lhs, $rhs, $cc, $truev, $falsev"> {
-  let isPseudo = 1;
-  let usesCustomInserter = 1;
-  let Pattern = [(set GPR:$dst,
-                  (LNP64selectcc GPR:$lhs, GPR:$rhs, imm:$cc, GPR:$truev,
-                   GPR:$falsev))];
+//===----------------------------------------------------------------------===//
+// Fused compare-and-select: rd = (ra <cc> rb) ? rt : rf. A branch-free Class-A
+// datapath mux, one opcode per condition (mirrors the branch family beq..bgeu).
+// This is the hardware target for ISD::SELECT_CC; plain ISD::SELECT lowers to
+// `selectcc cond, 0, t, f, NE` (LowerSELECT) and selects to sel.ne.
+//===----------------------------------------------------------------------===//
+class LNP64Select<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$ra, GPR:$rb, GPR:$rt, GPR:$rf),
+                Mnemonic, "\t$rd, $ra, $rb, $rt, $rf"> {
+  bits<5> rd;
+  bits<5> ra;
+  bits<5> rb;
+  bits<5> rt;
+  bits<5> rf;
+  let Inst{55-51} = rd;
+  let Inst{50-46} = ra;
+  let Inst{45-41} = rb;
+  let Inst{40-36} = rt;
+  let Inst{35-31} = rf;
 }
+def SEL_EQ  : LNP64Select<"sel.eq">  { let Opcode = 0x40; }
+def SEL_NE  : LNP64Select<"sel.ne">  { let Opcode = 0x41; }
+def SEL_LT  : LNP64Select<"sel.lt">  { let Opcode = 0x42; }
+def SEL_GE  : LNP64Select<"sel.ge">  { let Opcode = 0x43; }
+def SEL_LTU : LNP64Select<"sel.ltu"> { let Opcode = 0x44; }
+def SEL_GEU : LNP64Select<"sel.geu"> { let Opcode = 0x45; }
+
+class SelPat<CondCode cc, LNP64Select inst>
+    : Pat<(selectcc GPR:$a, GPR:$b, GPR:$t, GPR:$f, cc),
+          (inst GPR:$a, GPR:$b, GPR:$t, GPR:$f)>;
+def : SelPat<SETEQ,  SEL_EQ>;
+def : SelPat<SETNE,  SEL_NE>;
+def : SelPat<SETLT,  SEL_LT>;
+def : SelPat<SETGE,  SEL_GE>;
+def : SelPat<SETULT, SEL_LTU>;
+def : SelPat<SETUGE, SEL_GEU>;
+// Conditions without a native opcode: swap the compared operands.
+class SelPatSwap<CondCode cc, LNP64Select inst>
+    : Pat<(selectcc GPR:$a, GPR:$b, GPR:$t, GPR:$f, cc),
+          (inst GPR:$b, GPR:$a, GPR:$t, GPR:$f)>;
+def : SelPatSwap<SETGT,  SEL_LT>;
+def : SelPatSwap<SETLE,  SEL_GE>;
+def : SelPatSwap<SETUGT, SEL_LTU>;
+def : SelPatSwap<SETULE, SEL_GEU>;
 
 //===----------------------------------------------------------------------===//
 // Integer ALU (R-type).

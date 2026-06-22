@@ -155,6 +155,18 @@ Removed: `amo.swap/add/and/or/xor` (0xc5-0xc8,0xca), `lock.cmpxchg` (0xc9).
 | 0x24 | `bge` | B | if rs1 >=s rs2 | v1 flag-branch |
 | 0x25 | `bltu` | B | if rs1 <u rs2 | **NEW** |
 | 0x26 | `bgeu` | B | if rs1 >=u rs2 | **NEW** |
+| 0x40 | `sel.eq` | R4 | rd = (ra==rb) ? rt : rf | **NEW** (fused compare-select) |
+| 0x41 | `sel.ne` | R4 | rd = (ra!=rb) ? rt : rf | **NEW** |
+| 0x42 | `sel.lt` | R4 | rd = (ra <s rb) ? rt : rf | **NEW** |
+| 0x43 | `sel.ge` | R4 | rd = (ra >=s rb) ? rt : rf | **NEW** |
+| 0x44 | `sel.ltu` | R4 | rd = (ra <u rb) ? rt : rf | **NEW** |
+| 0x45 | `sel.geu` | R4 | rd = (ra >=u rb) ? rt : rf | **NEW** |
+
+`sel.<cc> rd, ra, rb, rt, rf` is the fused compare-and-select (a branch-free,
+Class-A datapath mux): rd[55:51], ra=rs1[50:46], rb=rs2[45:41], rt=rs3[40:36],
+rf=rs4[35:31]. Conditions mirror the branch family (0x21-0x26). It is the
+hardware target for LLVM `ISD::SELECT_CC` (and plain `select` via
+`sel.ne rd, cond, r0, t, f`), replacing the v1 compare + branch-diamond lowering.
 
 `ret` = `jalr r0, r1, 0`. `call sym` = `jal r1, sym`. `bgt/ble/bgtu/bleu` are
 assembler aliases (operand swap). Removed: `ret`(0x1f), `lr_get`(0x29),

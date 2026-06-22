@@ -5,11 +5,11 @@ pub const FDR_COUNT: usize = 256;
 pub const FPR_COUNT: usize = 32;
 pub const VR_COUNT: usize = 16;
 pub const DATA_BASE: u64 = 0x10_000;
-pub const STACK_TOP: u64 = 0x680_000;
+pub const STACK_TOP: u64 = 0x1800_000;
 pub const HEAP_BASE: u64 = 0x100_000;
-pub const ARG_BASE: u64 = 0x700_000;
+pub const ARG_BASE: u64 = 0x1900_000;
 pub const ARG_SIZE: u64 = 0x20_000;
-pub const MEMORY_SIZE: usize = 8 * 1024 * 1024;
+pub const MEMORY_SIZE: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Reg(pub usize);
@@ -55,6 +55,18 @@ pub enum Value {
 pub enum MemRef {
     BaseOffset(Reg, i64),
     Label(String),
+}
+
+/// Condition for the fused compare-and-select (`sel.<cc>`), mirroring the
+/// branch conditions (beq/bne/blt/bge/bltu/bgeu).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelCond {
+    Eq,
+    Ne,
+    Lt,
+    Ge,
+    Ltu,
+    Geu,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +127,9 @@ pub enum Instr {
     Bge(Reg, Reg, Target),
     Bltu(Reg, Reg, Target),
     Bgeu(Reg, Reg, Target),
+    /// Fused compare-and-select: rd = (ra <cc> rb) ? rt : rf.
+    /// Operands: (cc, rd, ra, rb, rt, rf).
+    Sel(SelCond, Reg, Reg, Reg, Reg, Reg),
     Ld(Reg, MemRef, Width),
     LdS(Reg, MemRef, Width),
     St(MemRef, Reg, Width),

@@ -4832,7 +4832,11 @@ mod tests {
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("setOperationAction(ISD::BRCOND, MVT::Other, Custom)"));
-        assert!(isel.contains("getBranchForCC"));
+        // select_cc is Legal (matched to the fused sel.<cc> instructions); plain
+        // select lowers to a generic select_cc node -- no branch-diamond pseudo.
+        assert!(isel.contains("setOperationAction(ISD::SELECT_CC, MVT::i64, Legal)"));
+        assert!(isel.contains("DAG.getNode(ISD::SELECT_CC"));
+        assert!(!isel.contains("getBranchForCC"));
         assert!(isel.contains("LNP64::PseudoLI64"));
         assert!(isel.contains("TII.get(LNP64::LI)"));
         assert!(isel.contains("TII.get(LNP64::LIU)"));
@@ -4843,12 +4847,11 @@ mod tests {
         assert!(isel.contains("LNP64ISD::WRAPPER"));
         assert!(isel.contains("ISD::BR_CC"));
         assert!(isel.contains("ISD::BRCOND"));
+        // The custom inserter remains only for PseudoLI64; the select
+        // branch-diamond inserter is gone (select_cc is a native instruction).
         assert!(isel.contains("EmitInstrWithCustomInserter"));
-        assert!(isel.contains("LNP64::PseudoSELECT_CC"));
-        assert!(isel.contains("LNP64::BEQ"));
-        assert!(isel.contains("LNP64::BLTU"));
-        assert!(isel.contains("getBranchForCC(CC, SwapOps)"));
-        assert!(isel.contains("TII.get(BrOpc)"));
+        assert!(!isel.contains("LNP64::PseudoSELECT_CC"));
+        assert!(!isel.contains("getBranchForCC(CC, SwapOps)"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
         assert!(isel.contains("CreateFixedObject"));
@@ -4912,7 +4915,7 @@ mod tests {
         assert!(isel_header.contains("getConstraintType"));
         assert!(isel_header.contains("getRegForInlineAsmConstraint"));
         assert!(isel_header.contains("EmitInstrWithCustomInserter"));
-        assert!(isel_header.contains("SELECT_CC"));
+        assert!(!isel_header.contains("SELECT_CC"));
         assert!(isel_header.contains("LowerFormalArguments"));
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
@@ -4941,7 +4944,11 @@ mod tests {
         assert!(instr_td.contains("def SLTI"));
         assert!(instr_td.contains("def LB"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
-        assert!(instr_td.contains("def PseudoSELECT_CC"));
+        // Fused compare-and-select instructions matched directly from select_cc.
+        assert!(instr_td.contains("def SEL_EQ"));
+        assert!(instr_td.contains("class LNP64Select"));
+        assert!(instr_td.contains("(selectcc GPR:$a, GPR:$b, GPR:$t, GPR:$f"));
+        assert!(!instr_td.contains("def PseudoSELECT_CC"));
         assert!(instr_td.contains("(brcc SETEQ, GPR:$a, GPR:$b, bb:$t), (BEQ GPR:$a, GPR:$b, bb:$t)"));
         assert!(instr_td.contains("(brcc SETULT, GPR:$a, GPR:$b, bb:$t), (BLTU GPR:$a, GPR:$b, bb:$t)"));
         assert!(instr_td.contains("(setcc GPR:$rs, simm32_i64_imm:$imm, SETLT)"));

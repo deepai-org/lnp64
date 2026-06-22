@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
-use isa::{Instr, MemRef, Pcr, Reg, Target, Value, Width};
+use isa::{Instr, MemRef, Pcr, Reg, SelCond, Target, Value, Width};
 use loader::{
     ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
     MemoryType, VmaProtection, VmaRecord,
@@ -513,6 +513,19 @@ fn encode_flat_exec_instr(
         }
         Instr::Bgeu(rs1, rs2, target) => {
             Ok(vec![enc_b(0x26, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Sel(cc, rd, ra, rb, rt, rf) => {
+            // rd[55:51] ra=rs1[50:46] rb=rs2[45:41] rt=rs3[40:36] rf=rs4[35:31];
+            // one opcode per condition (0x40-0x45), mirroring the branch family.
+            let op = match cc {
+                SelCond::Eq => 0x40,
+                SelCond::Ne => 0x41,
+                SelCond::Lt => 0x42,
+                SelCond::Ge => 0x43,
+                SelCond::Ltu => 0x44,
+                SelCond::Geu => 0x45,
+            };
+            Ok(vec![enc_rrrrr(op, *rd, *ra, *rb, *rt, *rf)])
         }
         Instr::LrD(rd, rs1) => Ok(vec![enc_rrr(0xc5, *rd, *rs1, Reg(0))]),
         Instr::ScD(rd, rs2, rs1) => Ok(vec![enc_rrr(0xc6, *rd, *rs1, *rs2)]),
