@@ -113,6 +113,9 @@ Architecture and hardware:
 
 - `design.md`: ISA and architectural contract.
 - `hardware_design.md`: RTL-facing hardware design sketch.
+- `unified_domain_refactor.md`: planned refactor unifying processes/containers/VMs
+  into one uniform Resource Domain node, keeping POSIX frozen in silicon as
+  data-only domain-keyed naming.
 - `formal_rtl_codesign_roadmap.md`: formal/RTL co-design plan, trust levels,
   proof coupling, and S0/M1+ work order.
 - `formal_theorems.md`: top-level theorem and proof goals.
