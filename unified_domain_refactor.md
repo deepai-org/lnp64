@@ -22,7 +22,10 @@ A **Resource Domain is one uniform node** that may *hold* any of:
   capability*, not intrinsic to the node),
 - zero or more **child domains**,
 - other capabilities (FDRs, device/DMA authority, gates, …),
-- a **budget** / accounting record.
+- a **budget**: an always-present, cheap **limit/accounting** record (cgroup/rlimit
+  style), plus an *optional* **CPU bandwidth reservation** (see the scheduler
+  model below). A limit is not a guarantee; only a reservation is. Most domains
+  carry only the limit.
 
 There is **no `process` vs `container` type tag** and **no leaf-vs-interior
 variant.** What a domain *is* (process, container, VM) is just which slots it
@@ -102,6 +105,76 @@ grafts, handled at the level already frozen, unchanged by this refactor:
 - **PID reuse / `getpid` stability / kill-by-pid** = the ambient-naming graft,
   contained by the names-are-data invariant above.
 
+## Scheduler model: multi-mode, time-share default, reservations opt-in
+
+Realtime is a pillar, so the scheduler is frozen in silicon — but as **analyzable
+mechanism with per-thread policy modes**, not a single frozen discipline.
+Bandwidth reservation is *one* mode, not the meaning of every domain budget;
+traditional time-share is the easy default so the common case stays cheap.
+
+### Per-thread scheduling class
+
+Each thread carries exactly one `SCHED_CLASS` in its thread context:
+
+- `TIMESHARE` — **default**. Weighted-fair / priority best-effort. No WCET claim.
+- `FIXED_PRIO` — static-priority preemptive (RMA / response-time analyzable).
+- `RESERVATION{budget, period}` — CBS / constant-bandwidth server: the *one*
+  bandwidth-reservation mode, giving temporal isolation + a hard guarantee.
+
+`CLONE` sets the class (inherit parent's, or explicit via profile); new threads
+default to `TIMESHARE`. One class per thread — no blending.
+
+### Two levels, with a degenerate flat fast path
+
+- **Interior domains** may carry an optional **reservation** (compositional
+  realtime — a reservation inside a reservation still composes); by default a
+  domain has only a limit/weight, not a reservation.
+- **Threads** carry the per-thread class above and are scheduled against their
+  domain's allocation.
+- **Degenerate fast path:** when no `FIXED_PRIO`/`RESERVATION` threads or reserved
+  domains exist, the engine collapses to a single flat time-share runqueue. You
+  pay hierarchical-scheduler cost *only* when something opts into realtime — this
+  is what makes "traditional is the easy default" true in silicon, not just API.
+
+Hard guarantees compose only along the chain of nodes that explicitly opted in;
+everything else is best-effort. Default end-to-end = time-share, zero reservation
+machinery engaged.
+
+### Admission control, fail-closed
+
+Setting a `RESERVATION` (thread or domain) goes through **hardware admission**: if
+the utilization cannot be admitted under the compositional bound, it is
+**refused**, never silently downgraded to best-effort (ties to the bounded-
+behavior / fail-closed severe goal).
+
+### IPC carries priority/bandwidth inheritance (realtime correctness)
+
+`GATE_CALL` into a server (driver / microkernel service) runs the server **on the
+caller's reservation/priority** (bandwidth/priority inheritance), fast-path
+bypassing the scheduler. Without this, cross-domain IPC reintroduces unbounded
+**priority inversion** (the Mars Pathfinder failure) and "isolated drivers" would
+contradict "realtime." So the migrating call-gate is a realtime *correctness*
+requirement, not just a speed optimization.
+
+### Realtime-contract scoping + isolation (proof obligations)
+
+- WCET / bounded-dispatch guarantees apply **only** to `FIXED_PRIO` /
+  `RESERVATION` threads and reserved domains. `TIMESHARE` is best-effort with **no**
+  WCET claim (no accidental stronger claim).
+- **Isolation theorem, both directions:** time-share load cannot make a
+  reservation miss; a reservation cannot starve time-share below its fair-share
+  floor (it consumes only slack).
+- **Compositional schedulability** (nested reservations still bound end-to-end
+  latency — periodic resource model / CBS composition) is the named hard realtime
+  proof frontier.
+
+### POSIX mapping (falls out cleanly)
+
+`SCHED_OTHER → TIMESHARE`, `SCHED_FIFO`/`SCHED_RR → FIXED_PRIO`,
+`SCHED_DEADLINE → RESERVATION`. `SCHED_DEADLINE` *is* CBS, so the reservation mode
+maps exactly. Three modes cover the POSIX scheduling surface — a frozen scheduler
+does not mean a fixed discipline.
+
 ## Work items (when scheduled)
 
 1. `design.md`: replace the separate "process" notion with "a process is a
@@ -116,9 +189,18 @@ grafts, handled at the level already frozen, unchanged by this refactor:
 4. Cost guard: a **lightweight leaf profile** so fork-heavy workloads
    (`make -j`, pipelines, fork storms) do not pay container-weight cost or exhaust
    a finite domain table; define fail-closed behavior on slot exhaustion.
+5. `design.md` §2 + `hardware_design.md` + schema: add the per-thread `SCHED_CLASS`
+   (default `TIMESHARE`), the optional domain reservation, the degenerate flat
+   time-share fast path, reservation admission/fail-closed, and `GATE_CALL`
+   priority/bandwidth inheritance.
+6. `formal_theorems.md` / `formal_rtl_codesign_roadmap.md`: realtime-contract
+   scoping, the two-direction isolation theorem, and the compositional
+   schedulability milestone (the hard realtime proof).
 
 ## Non-goals
 
 - Not moving any frozen POSIX mechanism into the OS/personality.
 - Not making threads into domains (threads stay the scheduling axis).
 - Not adding ambient (capability-free) authority via PIDs/pgrps.
+- Not making bandwidth reservation the default or the meaning of every budget —
+  it is one opt-in per-thread/per-domain mode; time-share is the default.
