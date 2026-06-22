@@ -25,7 +25,7 @@ static constexpr unsigned LNP64DwarfRA = 1;
 // the reserved RASaveSize bytes ON TOP at offset getStackSize(), so it never
 // aliases the PEI-laid-out CSR save area, locals, or spills.
 static uint64_t getRASaveSize(const MachineFunction &MF) {
-  return MF.getFrameInfo().hasCalls() ? 8 : 0;
+  return MF.getFrameInfo().hasCalls() ? LNP64RASaveSlotBytes : 0;
 }
 
 static uint64_t getRASaveOffset(const MachineFunction &MF) {
@@ -59,7 +59,8 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
   // pointer is adjusted in a single instruction -- no materialize-into-scratch
   // and no reserved scratch register needed (negative Amount subtracts).
   if (!isInt<32>(Amount))
-    llvm_unreachable("LNP64 stack adjustment exceeds 32-bit immediate");
+    report_fatal_error("LNP64 stack frame exceeds the 32-bit ADDI immediate; "
+                       "multi-instruction SP adjustment is not implemented");
   BuildMI(MBB, I, DL, TII.get(LNP64::ADDI), LNP64::R31)
       .addReg(LNP64::R31)
       .addImm(Amount);

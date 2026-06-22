@@ -231,11 +231,10 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDValue Align = Op.getOperand(2);
     unsigned AlignVal = cast<ConstantSDNode>(Align)->getZExtValue();
     if (AlignVal < 8) AlignVal = 8; // LNP64 min stack alignment
-    SDValue AlignMask = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
-    SDValue AlignM1   = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
+    SDValue AlignM1 = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
     SDValue Rounded = DAG.getNode(ISD::AND, DL, MVT::i64,
                         DAG.getNode(ISD::ADD, DL, MVT::i64, Size, AlignM1),
-                        DAG.getNOT(DL, AlignMask, MVT::i64));
+                        DAG.getNOT(DL, AlignM1, MVT::i64));
     SDValue SP = DAG.getCopyFromReg(Chain, DL, LNP64::R31, MVT::i64);
     SDValue NewSP = DAG.getNode(ISD::SUB, DL, MVT::i64, SP, Rounded);
     Chain = DAG.getCopyToReg(SP.getValue(1), DL, LNP64::R31, NewSP);

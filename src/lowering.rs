@@ -5018,7 +5018,10 @@ mod tests {
         // E8: SP adjusted by a single ADDI (full signed-32 immediate), no
         // scratch register, no SUB/ADD-with-materialized-magnitude.
         assert!(frame.contains("TII.get(LNP64::ADDI)"));
-        assert!(frame.contains("stack adjustment exceeds 32-bit immediate"));
+        // Oversize frames are a real (if rare) condition, so it is a
+        // report_fatal_error, not an llvm_unreachable (which compiles out).
+        assert!(frame.contains("report_fatal_error"));
+        assert!(frame.contains("exceeds the 32-bit ADDI immediate"));
         assert!(!frame.contains("LNP64::R30"));
         assert!(frame.contains("MCCFIInstruction::cfiDefCfa"));
         assert!(frame.contains("LNP64DwarfSP = 31"));

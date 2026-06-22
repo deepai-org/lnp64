@@ -28,9 +28,11 @@ namespace {
 
 class LNP64MCCodeEmitter final : public MCCodeEmitter {
   const MCInstrInfo &MCII;
+  const MCRegisterInfo &MRI;
 
 public:
-  LNP64MCCodeEmitter(const MCInstrInfo &MCII) : MCII(MCII) {}
+  LNP64MCCodeEmitter(const MCInstrInfo &MCII, const MCRegisterInfo &MRI)
+      : MCII(MCII), MRI(MRI) {}
 
   void encodeInstruction(const MCInst &MI, raw_ostream &OS,
                          SmallVectorImpl<MCFixup> &Fixups,
@@ -47,14 +49,14 @@ public:
                                  SmallVectorImpl<MCFixup> &Fixups,
                                  const MCSubtargetInfo &STI) const;
 
-  // Default operand encoder: registers return their HWEncoding (GPR r0..r31 ->
-  // 0..31, PCR -> 0..11), immediates return their value (masked to field width
-  // by the generated code).
+  // Default operand encoder: registers return their .td HWEncoding (GPR r0..r31
+  // -> 0..31, PCR -> 0..11), immediates return their value (masked to field
+  // width by the generated code).
   uint64_t getMachineOpValue(const MCInst &MI, const MCOperand &MO,
                              SmallVectorImpl<MCFixup> &Fixups,
                              const MCSubtargetInfo &STI) const {
     if (MO.isReg())
-      return Ctx_getRegEncoding(MO.getReg());
+      return MRI.getEncodingValue(MO.getReg());
     if (MO.isImm())
       return static_cast<uint64_t>(MO.getImm());
     llvm_unreachable("unexpected operand kind in LNP64 encoder");
@@ -99,38 +101,14 @@ public:
     return 0;
   }
 
-private:
-  static unsigned Ctx_getRegEncoding(unsigned Reg);
 };
-
-unsigned LNP64MCCodeEmitter::Ctx_getRegEncoding(unsigned Reg) {
-  // GPRs are contiguous; their HWEncoding equals (Reg - R0). PCRs encode 0..11.
-  if (Reg >= LNP64::R0 && Reg <= LNP64::R31)
-    return Reg - LNP64::R0;
-  switch (Reg) {
-  case LNP64::PID: return 0;
-  case LNP64::PPID: return 1;
-  case LNP64::TID: return 2;
-  case LNP64::TP: return 3;
-  case LNP64::UID: return 4;
-  case LNP64::GID: return 5;
-  case LNP64::SIGMASK: return 6;
-  case LNP64::SIGPENDING: return 7;
-  case LNP64::REALTIME_SEC: return 8;
-  case LNP64::REALTIME_NSEC: return 9;
-  case LNP64::CRED_PROFILE: return 10;
-  case LNP64::CRED_HANDLE: return 11;
-  default:
-    llvm_unreachable("expected LNP64 GPR or PCR operand");
-  }
-}
 
 #include "LNP64GenMCCodeEmitter.inc"
 
 } // end anonymous namespace
 
 MCCodeEmitter *llvm::createLNP64MCCodeEmitter(const MCInstrInfo &MCII,
-                                             const MCRegisterInfo &,
+                                             const MCRegisterInfo &MRI,
                                              MCContext &) {
-  return new LNP64MCCodeEmitter(MCII);
+  return new LNP64MCCodeEmitter(MCII, MRI);
 }

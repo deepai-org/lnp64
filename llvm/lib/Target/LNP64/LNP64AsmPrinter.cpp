@@ -77,15 +77,8 @@ bool LNP64AsmPrinter::lowerOperand(const MachineOperand &MO,
 }
 
 static void printLNP64AsmReg(raw_ostream &OS, Register Reg) {
-  if (Reg >= LNP64::R0 && Reg <= LNP64::R31) {
-    OS << "r" << unsigned(Reg - LNP64::R0);
-    return;
-  }
-  if (Reg == LNP64::TP) {
-    OS << "tp";
-    return;
-  }
-  OS << "reg" << unsigned(Reg);
+  // Reuse the generated register-name table rather than reconstructing names.
+  OS << LNP64InstPrinter::getRegisterName(Reg);
 }
 
 bool LNP64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,

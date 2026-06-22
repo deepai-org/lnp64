@@ -6,11 +6,13 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_CTOR
 #include "LNP64GenSubtargetInfo.inc"
 
+static StringRef cpuOrDefault(StringRef CPU) {
+  return CPU.empty() ? StringRef("generic-lnp64") : CPU;
+}
+
 LNP64Subtarget::LNP64Subtarget(const Triple &TT, StringRef CPU, StringRef FS,
                                const TargetMachine &TM)
-    : LNP64GenSubtargetInfo(TT, CPU.empty() ? "generic-lnp64" : CPU,
-                            CPU.empty() ? "generic-lnp64" : CPU, FS),
+    : LNP64GenSubtargetInfo(TT, cpuOrDefault(CPU), cpuOrDefault(CPU), FS),
       TLInfo(TM, *this) {
-  StringRef CPUName = CPU.empty() ? "generic-lnp64" : CPU;
-  ParseSubtargetFeatures(CPUName, CPUName, FS);
+  ParseSubtargetFeatures(cpuOrDefault(CPU), cpuOrDefault(CPU), FS);
 }

@@ -69,7 +69,16 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineFunction &MF = *MI.getParent()->getParent();
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
-  int64_t Offset = MFI.getObjectOffset(FrameIndex) + MFI.getStackSize();
+  // Fixed frame objects (FI < 0) represent the caller's incoming frame area
+  // and are offset from the incoming SP. The prologue reserves
+  // getStackSize() + RASaveSize bytes below incoming SP, but
+  // getStackSize() alone is reported by MFI. Fixed objects therefore need
+  // the extra RASaveSize added so they land at incoming_SP + object_offset
+  // rather than incoming_SP - RASaveSize + object_offset.
+  uint64_t RASaveSize =
+      MF.getFrameInfo().hasCalls() ? LNP64RASaveSlotBytes : 0;
+  int64_t BaseSize = int64_t(MFI.getStackSize()) + (FrameIndex < 0 ? int64_t(RASaveSize) : 0);
+  int64_t Offset = MFI.getObjectOffset(FrameIndex) + BaseSize;
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
