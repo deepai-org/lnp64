@@ -292,8 +292,13 @@ class LNP64Signal1<string Mnemonic>
 def NOP : LNP64NoOperand<"nop"> { let Opcode = 0x00; }
 def YIELD : LNP64NoOperand<"yield"> { let Opcode = 0x06; }
 
-// li rd, imm32 is an alias for addi rd, r0, imm32; LLVM materializes it via the
-// addi path. We keep an LI form for the asm spelling "li rd, imm".
+// li rd, imm32 and mov rd, rs are codegen-internal spellings of the addi (0xa0)
+// encoding (li = addi rd, r0, imm; mov = addi rd, rs, 0). They are NOT distinct
+// decodable instructions -- addi is the one canonical form at 0xa0. Marking
+// them isCodeGenOnly keeps them selectable/rematerializable by codegen while
+// excluding them from the (generated) disassembler and asm-matcher, so each
+// binary opcode decodes to exactly one instruction. The asm spellings "li"/
+// "mov" are provided as InstAliases of addi (see below).
 def LI : LNP64Inst<(outs GPR:$rd), (ins simm32:$imm), "li", "\t$rd, $imm"> {
   bits<5> rd;
   bits<32> imm;
@@ -304,8 +309,9 @@ def LI : LNP64Inst<(outs GPR:$rd), (ins simm32:$imm), "li", "\t$rd, $imm"> {
   // Constant with no register inputs: rematerialize instead of spill/reload.
   let isReMaterializable = 1;
   let isAsCheapAsAMove = 1;
+  let isCodeGenOnly = 1;
 }
-def MOV : LNP64RR<"mov"> { let Opcode = 0xa0; }  // addi rd, rs, 0
+def MOV : LNP64RR<"mov"> { let Opcode = 0xa0; let isCodeGenOnly = 1; }  // addi rd, rs, 0
 def AUIPC : LNP64Inst<(outs GPR:$rd), (ins auipctarget:$target), "auipc",
                       "\t$rd, $target"> {
   bits<5> rd;
@@ -489,12 +495,14 @@ def PseudoCALL
   let Opcode = 0x27;
   let Inst{55-51} = 1;       // rd = r1 (ra)
   let Inst{50-19} = target;
+  let isCodeGenOnly = 1;     // codegen call form of jal r1, target
 }
 def PseudoCALLIndirect
     : LNP64Inst<(outs), (ins GPR:$target), "jalr", "\tr1, $target, 0"> {
   bits<5> target;
   let Opcode = 0x28;
   let Inst{55-51} = 1;       // rd = r1 (ra)
+  let isCodeGenOnly = 1;     // codegen call form of jalr r1, rs, 0
   let Inst{50-46} = target;  // rs1 = base; imm = 0
 }
 }
@@ -517,12 +525,15 @@ def ADJCALLSTACKUP
 }
 }
 
-// ret = jalr r0, r1, 0. Lowered through a pseudo so the asm spelling is "ret".
+// ret = jalr r0, r1, 0. Codegen-internal return form of jalr (one canonical
+// decodable instruction at 0x28). The asm spelling "ret" is an InstAlias of
+// jalr (see below).
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [R1] in
 def RET : LNP64NoOperand<"ret"> {
   let Opcode = 0x28;       // jalr r0, r1, 0
   let Inst{50-46} = 1;     // rs1 = r1
   let Pattern = [(LNP64retflag)];
+  let isCodeGenOnly = 1;
 }
 
 //===----------------------------------------------------------------------===//
