@@ -5,20 +5,31 @@
 //   I-type imm32 [45:14]; S/B-type imm32 [40:9]; U/J-type imm32 [50:19].
 //   Branch/jump target = pc + (sext32(imm) << 3).
 //
-// The ENCODER is TableGen-generated: every instruction carries a
-// `field bits<64> Inst` (filled by getBinaryCodeForInstr), with the opcode in
-// Inst{63-56} and operands bound to their bit fields by the format base classes
-// below. The hand-written AsmParser / Disassembler / InstPrinter remain (the
-// disassembler collapses addi->li/mov and jalr->ret aliases, and the parser has
-// custom off(base) lexing, which the generated tables cannot express
-// unambiguously).
+// The ENCODER, DISASSEMBLER and INSTPRINTER are all TableGen-generated from the
+// `field bits<64> Inst` and AsmString on each instruction (opcode in Inst{63-56},
+// operands bound to their bit fields by the format base classes below). mov/li/
+// ret are InstAliases of the canonical addi/jalr encodings, so the generated
+// disassembler+printer round-trip them through one decodable instruction per
+// opcode. Only the AsmParser remains hand-written (custom off(base) lexing).
 //===----------------------------------------------------------------------===//
 
-def simm32 : Operand<i64>;
-def brtarget : Operand<OtherVT> { let EncoderMethod = "getBranchTargetOpValue"; }
-def jmptarget : Operand<OtherVT> { let EncoderMethod = "getJumpTargetOpValue"; }
-def calltarget : Operand<i64> { let EncoderMethod = "getJumpTargetOpValue"; }
-def auipctarget : Operand<i64> { let EncoderMethod = "getAUIPCTargetOpValue"; }
+def simm32 : Operand<i64> { let DecoderMethod = "decodeSImm32"; }
+def brtarget : Operand<OtherVT> {
+  let EncoderMethod = "getBranchTargetOpValue";
+  let DecoderMethod = "decodeShiftedTarget";   // field holds offset>>3 (signed)
+}
+def jmptarget : Operand<OtherVT> {
+  let EncoderMethod = "getJumpTargetOpValue";
+  let DecoderMethod = "decodeShiftedTarget";
+}
+def calltarget : Operand<i64> {
+  let EncoderMethod = "getJumpTargetOpValue";
+  let DecoderMethod = "decodeShiftedTarget";
+}
+def auipctarget : Operand<i64> {
+  let EncoderMethod = "getAUIPCTargetOpValue";
+  let DecoderMethod = "decodeSImm32";          // signed 32-bit, no shift
+}
 
 def simm32_imm : PatLeaf<(imm), [{
   return isInt<32>(N->getSExtValue());
@@ -96,6 +107,8 @@ class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
   field bits<64> Inst;
   let Inst{63-56} = Opcode;
   // Reserved low bits default to 0; format classes overlay register/imm slices.
+  // Required by the -gen-disassembler backend: no soft-fail bits in this ISA.
+  field bits<64> SoftFail = 0;
 }
 
 // Register field shifts (must match the v2 ISA layout):
@@ -748,3 +761,16 @@ def GATE_RETURN : LNP64Native4<"gate_return"> {
   let Opcode = 0x4f;
   let Pattern = [(set GPR:$rd, (LNP64gatereturn GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }
+
+//===----------------------------------------------------------------------===//
+// Assembler aliases for the canonical encodings.
+//
+// mov/li/ret are the addi (0xa0) and jalr (0x28) encodings with fixed operands.
+// The codegen-internal LI/MOV/RET defs (isCodeGenOnly) carry these for
+// instruction selection; these InstAliases give the (generated) assembler and
+// disassembler the human spellings, so `addi rd,rs,0` prints as `mov rd, rs`,
+// `addi rd,r0,imm` as `li rd, imm`, and `jalr r0,r1,0` as `ret`.
+//===----------------------------------------------------------------------===//
+def : InstAlias<"mov $rd, $rs", (ADDI GPR:$rd, GPR:$rs, 0)>;
+def : InstAlias<"li $rd, $imm",  (ADDI GPR:$rd, R0, simm32:$imm)>;
+def : InstAlias<"ret",           (JALR R0, R1, 0)>;

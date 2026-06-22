@@ -8,6 +8,8 @@ tablegen(LLVM LNP64GenCallingConv.inc -gen-callingconv)
 tablegen(LLVM LNP64GenSubtargetInfo.inc -gen-subtarget)
 tablegen(LLVM LNP64GenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM LNP64GenMCCodeEmitter.inc -gen-emitter)
+tablegen(LLVM LNP64GenAsmWriter.inc -gen-asm-writer)
+tablegen(LLVM LNP64GenDisassemblerTables.inc -gen-disassembler)
 
 add_public_tablegen_target(LNP64CommonTableGen)
 

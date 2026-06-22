@@ -4706,25 +4706,17 @@ mod tests {
                 "MC backend missing relocation mapping {relocation}"
             );
         }
+        // The InstPrinter is now TableGen-generated: mnemonics, operand order
+        // and the mov/li/ret aliases come from the .td AsmStrings via
+        // LNP64GenAsmWriter.inc. This file only provides the printOperand /
+        // register-name hooks -- no hand-written per-opcode mnemonic switch.
         assert!(inst_printer.contains("createLNP64MCInstPrinter"));
-        assert!(inst_printer.contains("getLNP64Mnemonic"));
-        assert!(inst_printer.contains("printMemOperand"));
-        assert!(inst_printer.contains("errno_set"));
-        assert!(inst_printer.contains("fork"));
-        assert!(inst_printer.contains("wait_pid"));
-        assert!(inst_printer.contains("slt"));
-        assert!(inst_printer.contains("sltu"));
-        assert!(inst_printer.contains("case LNP64::EXIT"));
-        assert!(inst_printer.contains("case LNP64::MMAP"));
-        assert!(inst_printer.contains("case LNP64::MUNMAP"));
-        assert!(inst_printer.contains("case LNP64::MPROTECT"));
-        assert!(inst_printer.contains("case LNP64::ENV_GET"));
-        assert!(inst_printer.contains("case LNP64::AUIPC"));
-        assert!(inst_printer.contains("case LNP64::LIU"));
-        assert!(inst_printer.contains("case LNP64::YIELD"));
-        assert!(inst_printer.contains("jalr"));
-        assert!(inst_printer.contains("lr.d"));
-        assert!(inst_printer.contains("sc.d"));
+        assert!(inst_printer.contains("#define PRINT_ALIAS_INSTR"));
+        assert!(inst_printer.contains("LNP64GenAsmWriter.inc"));
+        assert!(inst_printer.contains("printInstruction(MI, Address, O)"));
+        assert!(inst_printer.contains("printAliasInstr(MI, Address, O)"));
+        assert!(inst_printer.contains("getRegisterName"));
+        assert!(!inst_printer.contains("getLNP64Mnemonic"));
         // The encoder is now TableGen-generated: encodeInstruction defers to the
         // generated getBinaryCodeForInstr over the `bits<64> Inst` fields, with
         // custom operand encoders for the branch/jump/auipc targets that emit
@@ -4771,7 +4763,6 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::YIELD)"));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
         assert!(instr_td.contains("def FORK : LNP64RuntimeGet"));
         assert!(instr_td.contains("def WAIT_PID : LNP64RR"));
@@ -4781,41 +4772,24 @@ mod tests {
         assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
         assert!(asm_parser.contains(r#".Case("lwu", LNP64::LWU)"#));
         assert!(asm_parser.contains(r#".Case("lhu", LNP64::LHU)"#));
+        // The disassembler is now TableGen-generated: it defers to
+        // decodeInstruction over the generated DecoderTable64 (the verified
+        // inverse of the generated encoder), with only register-class and
+        // immediate decode hooks hand-provided. No hand-written per-opcode
+        // switch (`case 0x..` / MI.setOpcode), and the isCodeGenOnly aliases
+        // (li/mov/ret) are excluded from the decoder -- one decodable
+        // instruction per opcode -- and re-spelled by the printer's InstAliases.
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::FORK)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::WAIT_PID)"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
-        assert!(disassembler.contains("readLE64"));
+        assert!(disassembler.contains("LNP64GenDisassemblerTables.inc"));
+        assert!(disassembler.contains("decodeInstruction(DecoderTable64"));
+        assert!(disassembler.contains("DecodeGPRRegisterClass"));
+        assert!(disassembler.contains("DecodePCRRegisterClass"));
+        assert!(disassembler.contains("decodeShiftedTarget"));
+        assert!(disassembler.contains("decodeSImm32"));
         assert!(disassembler.contains("ArrayRef<uint8_t> Bytes"));
         assert!(!disassembler.contains("MemoryObject"));
-        assert!(disassembler.contains("case 0x10"));
-        assert!(disassembler.contains("case 0x04"));
-        assert!(disassembler.contains("case 0x05"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::AUIPC)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::LIU)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::ADD)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::AND)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::SLT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::SLTU)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::JAL)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::JALR)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::ERRNO_GET)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::ERRNO_SET)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::EXIT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::MMAP)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::MUNMAP)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::MPROTECT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::ENV_GET)"));
-        assert!(disassembler.contains("case 0x54"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::GET_PCR)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::SET_PCR)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::OPEN_AT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CLONE_SPAWN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::THREAD_JOIN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::LWU)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::LHU)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::SB)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::SH)"));
+        assert!(!disassembler.contains("MI.setOpcode("));
         assert!(disassembler.contains("SignExtend64<32>"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
@@ -4851,17 +4825,11 @@ mod tests {
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
         assert!(asm_printer.contains("PrintAsmOperand"));
         assert!(asm_printer.contains("printLNP64AsmReg"));
-        assert!(inst_printer.contains("case LNP64::GET_PCR"));
-        assert!(inst_printer.contains("return \"get_pcr\""));
-        assert!(inst_printer.contains("case LNP64::OPEN_AT"));
-        assert!(inst_printer.contains("return \"open_at\""));
-        assert!(inst_printer.contains("case LNP64::CLONE_SPAWN"));
-        assert!(inst_printer.contains("return \"clone.spawn\""));
-        assert!(inst_printer.contains("case LNP64::THREAD_JOIN"));
-        assert!(inst_printer.contains("return \"thread_join\""));
-        assert!(inst_printer.contains("case LNP64::PULL: return \"pull\""));
-        assert!(inst_printer.contains("OS << \"PID\""));
-        assert!(inst_printer.contains("OS << \"SIGMASK\""));
+        // Mnemonics (get_pcr/open_at/clone.spawn/...) and register names
+        // (PID/SIGMASK/...) come from the .td AsmStrings and register AsmNames
+        // via the generated AsmWriter; the printer no longer hand-codes them.
+        assert!(inst_printer.contains("getRegisterName(Op.getReg())"));
+        assert!(!inst_printer.contains("case LNP64::"));
         assert!(asm_printer.contains("PrintAsmMemoryOperand"));
         assert!(asm_printer.contains("MachineOperand::MO_MachineBasicBlock"));
         assert!(asm_printer.contains("MachineOperand::MO_GlobalAddress"));
@@ -8139,9 +8107,12 @@ mod tests {
         assert!(groups["compat_process_control"].1.contains(&"WAIT_PID"));
         assert!(groups["compat_process_control"].1.contains(&"EXEC"));
         assert!(asm_parser.contains(".Case(\"exec\", LNP64::EXEC)"));
-        assert!(inst_printer.contains("case LNP64::EXEC:"));
-        assert!(disassembler.contains("case 0x7f:"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::EXEC)"));
+        // exec's mnemonic/encoding/decoding now come from the .td (def EXEC)
+        // via the generated emitter/printer/disassembler, not hand-written
+        // switch cases. The encoder is generated; the disassembler defers to
+        // the generated decode table.
+        assert!(mc_emitter.contains("getBinaryCodeForInstr"));
+        assert!(disassembler.contains("decodeInstruction(DecoderTable64"));
         assert!(
             groups["compat_metadata_control"]
                 .0
@@ -8203,24 +8174,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)"#));
         assert!(asm_parser.contains(r#".Case("fd_seek_dyn", LNP64::FD_SEEK_DYN)"#));
         assert!(asm_parser.contains("Opcode == LNP64::UNLINK_PATH_AT"));
-        assert!(inst_printer.contains(r#"return "clone.spawn";"#));
-        assert!(inst_printer.contains(r#"return "thread_join";"#));
-        assert!(inst_printer.contains(r#"return "unlink_path_at";"#));
-        assert!(inst_printer.contains(r#"return "stat_path_at";"#));
-        assert!(inst_printer.contains(r#"return "stat_fd_dyn";"#));
-        assert!(inst_printer.contains(r#"return "utime_path_at";"#));
-        assert!(inst_printer.contains(r#"return "utime_fd_dyn";"#));
-        assert!(inst_printer.contains(r#"return "fcntl_fd_dyn";"#));
-        assert!(inst_printer.contains(r#"return "fd_seek_dyn";"#));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CLONE_SPAWN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::THREAD_JOIN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::UNLINK_PATH_AT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::STAT_PATH_AT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::STAT_FD_DYN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::UTIME_PATH_AT)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::UTIME_FD_DYN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::FCNTL_FD_DYN)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::FD_SEEK_DYN)"));
+        // Mnemonics and encodings for these come from the .td via the generated
+        // printer/disassembler/encoder; only the hand parser still lists them.
         for (mnemonic, opcode) in [
             ("open_dir_dyn", "OPEN_DIR_DYN"),
             ("mkdir_path_at", "MKDIR_PATH_AT"),
@@ -8235,21 +8190,11 @@ mod tests {
             ("chown_path_at", "CHOWN_PATH_AT"),
         ] {
             assert!(asm_parser.contains(&format!(r#".Case("{mnemonic}", LNP64::{opcode})"#)));
-            assert!(inst_printer.contains(&format!(r#"return "{mnemonic}";"#)));
-            assert!(disassembler.contains(&format!("MI.setOpcode(LNP64::{opcode})")));
         }
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));
         assert!(asm_parser.contains(r#".Case("cap_revoke", LNP64::CAP_REVOKE)"#));
-        assert!(inst_printer.contains(r#"return "cap_send";"#));
-        assert!(inst_printer.contains(r#"return "cap_recv";"#));
-        assert!(inst_printer.contains(r#"return "cap_dup";"#));
-        assert!(inst_printer.contains(r#"return "cap_revoke";"#));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_SEND)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_RECV)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_DUP)"));
-        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_REVOKE)"));
         // The encoder is TableGen-generated: bytes come from the generated
         // getBinaryCodeForInstr over the `bits<64> Inst` layout (not a
         // hand-written per-opcode switch). The custom operand encoders below
