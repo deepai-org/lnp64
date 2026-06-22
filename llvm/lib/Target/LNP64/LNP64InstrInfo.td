@@ -13,22 +13,45 @@
 // opcode. Only the AsmParser remains hand-written (custom off(base) lexing).
 //===----------------------------------------------------------------------===//
 
-def simm32 : Operand<i64> { let DecoderMethod = "decodeSImm32"; }
+// AsmOperandClasses for the generated AsmMatcher. Registers (GPR/PCR) get their
+// operand classes auto-generated from the RegisterClass; these cover the
+// immediate and pc-relative-target operands.
+def SImm32AsmOperand : AsmOperandClass {
+  let Name = "SImm32";
+  let RenderMethod = "addImmOperands";
+  let PredicateMethod = "isSImm32";
+}
+// Branch/jump/call/auipc targets accept a concrete offset or a symbol ref
+// (the encoder emits the appropriate fixup).
+def TargetAsmOperand : AsmOperandClass {
+  let Name = "Target";
+  let RenderMethod = "addImmOperands";
+  let PredicateMethod = "isImm";
+}
+
+def simm32 : Operand<i64> {
+  let DecoderMethod = "decodeSImm32";
+  let ParserMatchClass = SImm32AsmOperand;
+}
 def brtarget : Operand<OtherVT> {
   let EncoderMethod = "getBranchTargetOpValue";
   let DecoderMethod = "decodeShiftedTarget";   // field holds offset>>3 (signed)
+  let ParserMatchClass = TargetAsmOperand;
 }
 def jmptarget : Operand<OtherVT> {
   let EncoderMethod = "getJumpTargetOpValue";
   let DecoderMethod = "decodeShiftedTarget";
+  let ParserMatchClass = TargetAsmOperand;
 }
 def calltarget : Operand<i64> {
   let EncoderMethod = "getJumpTargetOpValue";
   let DecoderMethod = "decodeShiftedTarget";
+  let ParserMatchClass = TargetAsmOperand;
 }
 def auipctarget : Operand<i64> {
   let EncoderMethod = "getAUIPCTargetOpValue";
   let DecoderMethod = "decodeSImm32";          // signed 32-bit, no shift
+  let ParserMatchClass = TargetAsmOperand;
 }
 
 def simm32_imm : PatLeaf<(imm), [{
@@ -165,7 +188,7 @@ class LNP64Branch<string Mnemonic>
 // I-type load: rd, imm32(base).
 class LNP64MemLoad<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm32:$offset), Mnemonic,
-                "\t$rd, $offset($base)"> {
+                "\t$rd, ${offset}(${base})"> {
   bits<5> rd;
   bits<5> base;
   bits<32> offset;
@@ -177,7 +200,7 @@ class LNP64MemLoad<string Mnemonic>
 // S-type store: rs(src), imm32(base). base->rs1 slot, src->rs2 slot.
 class LNP64MemStore<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm32:$offset), Mnemonic,
-                "\t$rs, $offset($base)"> {
+                "\t$rs, ${offset}(${base})"> {
   bits<5> rs;
   bits<5> base;
   bits<32> offset;
@@ -604,7 +627,7 @@ def : Pat<(atomic_store_64 GPR:$base, GPR:$rs), (SD GPR:$rs, GPR:$base, 0)>;
 // Atomics (LR/SC) and fences.
 //===----------------------------------------------------------------------===//
 
-def LR_D : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1), "lr.d", "\t$rd, ($rs1)"> {
+def LR_D : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1), "lr.d", "\t$rd, (${rs1})"> {
   bits<5> rd;
   bits<5> rs1;
   let Opcode = 0xc5;
@@ -612,7 +635,7 @@ def LR_D : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1), "lr.d", "\t$rd, ($rs1)"> {
   let Inst{50-46} = rs1;
 }
 def SC_D : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "sc.d",
-                     "\t$rd, $rs2, ($rs1)"> {
+                     "\t$rd, $rs2, (${rs1})"> {
   // sc.d rd, rs2, (rs1): rd in rd slot, rs1(base) in rs1 slot, rs2(src) in rs2.
   bits<5> rd;
   bits<5> rs2;
@@ -774,3 +797,10 @@ def GATE_RETURN : LNP64Native4<"gate_return"> {
 def : InstAlias<"mov $rd, $rs", (ADDI GPR:$rd, GPR:$rs, 0)>;
 def : InstAlias<"li $rd, $imm",  (ADDI GPR:$rd, R0, simm32:$imm)>;
 def : InstAlias<"ret",           (JALR R0, R1, 0)>;
+
+// Ordering-annotated fence spellings are all the single v2 fence (parser-only:
+// Emit=0 keeps the printer/disassembler emitting plain "fence").
+def : InstAlias<"fence.acq",     (FENCE), 0>;
+def : InstAlias<"fence.rel",     (FENCE), 0>;
+def : InstAlias<"fence.acq_rel", (FENCE), 0>;
+def : InstAlias<"fence.sc",      (FENCE), 0>;

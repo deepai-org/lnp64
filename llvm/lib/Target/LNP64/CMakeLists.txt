@@ -10,6 +10,7 @@ tablegen(LLVM LNP64GenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM LNP64GenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM LNP64GenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM LNP64GenDisassemblerTables.inc -gen-disassembler)
+tablegen(LLVM LNP64GenAsmMatcher.inc -gen-asm-matcher)
 
 add_public_tablegen_target(LNP64CommonTableGen)
 

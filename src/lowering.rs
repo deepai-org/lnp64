@@ -4642,7 +4642,7 @@ mod tests {
             "(outs GPR:$rd)",
             "(ins GPR:$rs1, GPR:$rs2)",
             "class LNP64MemLoad",
-            "$offset($base)",
+            "${offset}(${base})",
             "class LNP64Native4",
             "(ins GPR:$cap, GPR:$arg0, GPR:$arg1)",
             "class LNP64PcrGet",
@@ -4735,34 +4735,25 @@ mod tests {
         assert!(cmake.contains("LNP64GenMCCodeEmitter.inc"));
         assert!(instr_td.contains("field bits<64> Inst"));
         assert!(instr_td.contains("let Inst{63-56} = Opcode"));
+        // The AsmParser now defers instruction matching to the TableGen
+        // -gen-asm-matcher tables (MatchInstructionImpl): mnemonics and per-
+        // instruction operand shape/typing come from the .td AsmStrings, not a
+        // hand StringSwitch + per-opcode operand dispatch. This file only lexes
+        // operands (registers incl. PCR names, immediates, off(base) memory).
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
         assert!(asm_parser.contains("tryParseRegister"));
-        assert!(asm_parser.contains("parseImmediateOrMemory"));
-        assert!(asm_parser.contains("buildInstruction"));
-        assert!(asm_parser.contains(r#".Case("auipc", LNP64::AUIPC)"#));
-        assert!(asm_parser.contains(r#".Case("liu", LNP64::LIU)"#));
-        assert!(asm_parser.contains(r#".Case("yield", LNP64::YIELD)"#));
-        assert!(asm_parser.contains("Opcode == LNP64::YIELD"));
-        assert!(asm_parser.contains(r#".Case("jal", LNP64::JAL)"#));
-        assert!(asm_parser.contains(r#".Case("jalr", LNP64::JALR)"#));
-        assert!(asm_parser.contains(r#".Case("slt", LNP64::SLT)"#));
-        assert!(asm_parser.contains(r#".Case("sltu", LNP64::SLTU)"#));
-        assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
-        assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
-        assert!(asm_parser.contains(r#".Case("fork", LNP64::FORK)"#));
-        assert!(asm_parser.contains(r#".Case("wait_pid", LNP64::WAIT_PID)"#));
-        assert!(asm_parser.contains(r#".Case("exit", LNP64::EXIT)"#));
-        assert!(asm_parser.contains(r#".Case("mmap", LNP64::MMAP)"#));
-        assert!(asm_parser.contains(r#".Case("munmap", LNP64::MUNMAP)"#));
-        assert!(asm_parser.contains(r#".Case("mprotect", LNP64::MPROTECT)"#));
-        assert!(asm_parser.contains(r#".Case("get_pcr", LNP64::GET_PCR)"#));
-        assert!(asm_parser.contains(r#".Case("set_pcr", LNP64::SET_PCR)"#));
-        assert!(asm_parser.contains(r#".Case("PID", LNP64::PID)"#));
-        assert!(asm_parser.contains(r#".Case("env_get", LNP64::ENV_GET)"#));
-        assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
-        assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
-        assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
+        assert!(asm_parser.contains("MatchInstructionImpl"));
+        assert!(asm_parser.contains("GET_ASSEMBLER_HEADER"));
+        assert!(asm_parser.contains("GET_MATCHER_IMPLEMENTATION"));
+        assert!(asm_parser.contains("LNP64GenAsmMatcher.inc"));
+        assert!(asm_parser.contains("parseRegisterName"));
+        assert!(asm_parser.contains("addImmOperands"));
+        assert!(asm_parser.contains("addRegOperands"));
+        assert!(!asm_parser.contains("buildInstruction"));
+        assert!(!asm_parser.contains(".Case(\"addi\""));
+        // The .td is the single source of truth for these mnemonics/shapes.
+        assert!(instr_td.contains(r#"def CLONE_SPAWN : LNP64RRR<"clone.spawn">"#));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
         assert!(instr_td.contains("def FORK : LNP64RuntimeGet"));
         assert!(instr_td.contains("def WAIT_PID : LNP64RR"));
@@ -4770,8 +4761,6 @@ mod tests {
         assert!(instr_td.contains("def THREAD_JOIN : LNP64RRR"));
         assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
         assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
-        assert!(asm_parser.contains(r#".Case("lwu", LNP64::LWU)"#));
-        assert!(asm_parser.contains(r#".Case("lhu", LNP64::LHU)"#));
         // The disassembler is now TableGen-generated: it defers to
         // decodeInstruction over the generated DecoderTable64 (the verified
         // inverse of the generated encoder), with only register-class and
@@ -7956,9 +7945,6 @@ mod tests {
         let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
-        let asm_parser = include_str!("../llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp");
-        let inst_printer =
-            include_str!("../llvm/lib/Target/LNP64/InstPrinter/LNP64InstPrinter.cpp");
         let disassembler =
             include_str!("../llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp");
         let mc_asm_backend =
@@ -8106,7 +8092,6 @@ mod tests {
         assert!(groups["compat_process_control"].1.contains(&"FORK"));
         assert!(groups["compat_process_control"].1.contains(&"WAIT_PID"));
         assert!(groups["compat_process_control"].1.contains(&"EXEC"));
-        assert!(asm_parser.contains(".Case(\"exec\", LNP64::EXEC)"));
         // exec's mnemonic/encoding/decoding now come from the .td (def EXEC)
         // via the generated emitter/printer/disassembler, not hand-written
         // switch cases. The encoder is generated; the disassembler defers to
@@ -8164,37 +8149,9 @@ mod tests {
             );
         }
         assert!(!groups.contains_key("native_control_planned"));
-        assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
-        assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
-        assert!(asm_parser.contains(r#".Case("unlink_path_at", LNP64::UNLINK_PATH_AT)"#));
-        assert!(asm_parser.contains(r#".Case("stat_path_at", LNP64::STAT_PATH_AT)"#));
-        assert!(asm_parser.contains(r#".Case("stat_fd_dyn", LNP64::STAT_FD_DYN)"#));
-        assert!(asm_parser.contains(r#".Case("utime_path_at", LNP64::UTIME_PATH_AT)"#));
-        assert!(asm_parser.contains(r#".Case("utime_fd_dyn", LNP64::UTIME_FD_DYN)"#));
-        assert!(asm_parser.contains(r#".Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)"#));
-        assert!(asm_parser.contains(r#".Case("fd_seek_dyn", LNP64::FD_SEEK_DYN)"#));
-        assert!(asm_parser.contains("Opcode == LNP64::UNLINK_PATH_AT"));
-        // Mnemonics and encodings for these come from the .td via the generated
-        // printer/disassembler/encoder; only the hand parser still lists them.
-        for (mnemonic, opcode) in [
-            ("open_dir_dyn", "OPEN_DIR_DYN"),
-            ("mkdir_path_at", "MKDIR_PATH_AT"),
-            ("rename_path_at", "RENAME_PATH_AT"),
-            ("link_path_at", "LINK_PATH_AT"),
-            ("symlink_path_at", "SYMLINK_PATH_AT"),
-            ("readlink_path_at", "READLINK_PATH_AT"),
-            ("chdir_path", "CHDIR_PATH"),
-            ("getcwd_path", "GETCWD_PATH"),
-            ("readdir_fd_dyn", "READDIR_FD_DYN"),
-            ("chmod_path_at", "CHMOD_PATH_AT"),
-            ("chown_path_at", "CHOWN_PATH_AT"),
-        ] {
-            assert!(asm_parser.contains(&format!(r#".Case("{mnemonic}", LNP64::{opcode})"#)));
-        }
-        assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
-        assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
-        assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));
-        assert!(asm_parser.contains(r#".Case("cap_revoke", LNP64::CAP_REVOKE)"#));
+        // Mnemonic recognition + operand shapes for all of these come from the
+        // .td AsmStrings via the generated AsmMatcher (MatchInstructionImpl) --
+        // no hand StringSwitch. The gate's assemble smokes exercise them.
         // The encoder is TableGen-generated: bytes come from the generated
         // getBinaryCodeForInstr over the `bits<64> Inst` layout (not a
         // hand-written per-opcode switch). The custom operand encoders below
