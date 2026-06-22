@@ -123,6 +123,14 @@ module lnp64_decode (
             8'h25: begin dec.opcode = LNP64_OP_BRANCH_LTU; dec.imm = imm_sb; end
             8'h26: begin dec.opcode = LNP64_OP_BRANCH_GEU; dec.imm = imm_sb; end
 
+            // --- fused compare-and-select: rd = (rs1 <cc> rs2) ? rs3 : rs4 ---
+            8'h40: begin dec.opcode = LNP64_OP_SEL_EQ;  end
+            8'h41: begin dec.opcode = LNP64_OP_SEL_NE;  end
+            8'h42: begin dec.opcode = LNP64_OP_SEL_LT;  end
+            8'h43: begin dec.opcode = LNP64_OP_SEL_GE;  end
+            8'h44: begin dec.opcode = LNP64_OP_SEL_LTU; end
+            8'h45: begin dec.opcode = LNP64_OP_SEL_GEU; end
+
             // --- constants / PC-relative ---
             8'hd0: begin dec.opcode = LNP64_OP_AUIPC; dec.imm = imm_uj; end
 
@@ -209,6 +217,12 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_SLTU ||
             dec.opcode == LNP64_OP_SLTI ||
             dec.opcode == LNP64_OP_SLTIU ||
+            dec.opcode == LNP64_OP_SEL_EQ ||
+            dec.opcode == LNP64_OP_SEL_NE ||
+            dec.opcode == LNP64_OP_SEL_LT ||
+            dec.opcode == LNP64_OP_SEL_GE ||
+            dec.opcode == LNP64_OP_SEL_LTU ||
+            dec.opcode == LNP64_OP_SEL_GEU ||
             dec.opcode == LNP64_OP_ADDI ||
             dec.opcode == LNP64_OP_ANDI ||
             dec.opcode == LNP64_OP_ORI ||

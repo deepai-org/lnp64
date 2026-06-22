@@ -225,6 +225,12 @@ impl Parser {
             "SLTU" => alu3(&args, Instr::Sltu)?,
             "SLTI" => alu_imm(&args, Instr::Slti)?,
             "SLTIU" => alu_imm(&args, Instr::Sltiu)?,
+            "SEL.EQ" => sel5(&args, SelCond::Eq)?,
+            "SEL.NE" => sel5(&args, SelCond::Ne)?,
+            "SEL.LT" => sel5(&args, SelCond::Lt)?,
+            "SEL.GE" => sel5(&args, SelCond::Ge)?,
+            "SEL.LTU" => sel5(&args, SelCond::Ltu)?,
+            "SEL.GEU" => sel5(&args, SelCond::Geu)?,
             "LIU" => alu_imm(&args, Instr::Liu)?,
             "JMP" => {
                 arity(1)?;
@@ -844,6 +850,21 @@ fn alu3(args: &[String], ctor: fn(Reg, Reg, Reg) -> Instr) -> Result<Instr, Stri
         ));
     }
     Ok(ctor(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?))
+}
+
+// sel.<cc> rd, ra, rb, rt, rf -- fused compare-and-select.
+fn sel5(args: &[String], cc: SelCond) -> Result<Instr, String> {
+    if args.len() != 5 {
+        return Err(format!("sel expects 5 operands, got {}", args.len()));
+    }
+    Ok(Instr::Sel(
+        cc,
+        reg(&args[0])?,
+        reg(&args[1])?,
+        reg(&args[2])?,
+        reg(&args[3])?,
+        reg(&args[4])?,
+    ))
 }
 
 fn alu2(args: &[String], ctor: fn(Reg, Reg) -> Instr) -> Result<Instr, String> {

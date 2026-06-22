@@ -1517,6 +1517,21 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    // Fused compare-and-select condition: does (a <cc> b) hold for sel.<cc>?
+    function automatic logic sel_taken(input logic [15:0] op,
+                                       input logic [63:0] a,
+                                       input logic [63:0] b);
+        case (op)
+            LNP64_OP_SEL_EQ:  sel_taken = (a == b);
+            LNP64_OP_SEL_NE:  sel_taken = (a != b);
+            LNP64_OP_SEL_LT:  sel_taken = ($signed(a) < $signed(b));
+            LNP64_OP_SEL_GE:  sel_taken = ($signed(a) >= $signed(b));
+            LNP64_OP_SEL_LTU: sel_taken = (a < b);
+            LNP64_OP_SEL_GEU: sel_taken = (a >= b);
+            default:          sel_taken = 1'b0;
+        endcase
+    endfunction
+
     function automatic logic [63:0] flat_retire_result_value(input logic [15:0] opcode);
         logic [63:0] result;
         logic [7:0] trace_result_reg;
@@ -1539,6 +1554,19 @@ module lnp64_core_tile #(
                     {63'd0, ($signed(gpr[dec.rs1]) < $signed({{32{dec.imm[31]}}, dec.imm}))};
                 LNP64_OP_SLTIU: result =
                     {63'd0, (gpr[dec.rs1] < {{32{dec.imm[31]}}, dec.imm})};
+                // Fused compare-and-select: rd = (rs1 <cc> rs2) ? rs3 : rs4.
+                LNP64_OP_SEL_EQ:
+                    result = (gpr[dec.rs1] == gpr[dec.rs2]) ? gpr[dec.rs3] : gpr[dec.rs4];
+                LNP64_OP_SEL_NE:
+                    result = (gpr[dec.rs1] != gpr[dec.rs2]) ? gpr[dec.rs3] : gpr[dec.rs4];
+                LNP64_OP_SEL_LT:
+                    result = ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2])) ? gpr[dec.rs3] : gpr[dec.rs4];
+                LNP64_OP_SEL_GE:
+                    result = ($signed(gpr[dec.rs1]) >= $signed(gpr[dec.rs2])) ? gpr[dec.rs3] : gpr[dec.rs4];
+                LNP64_OP_SEL_LTU:
+                    result = (gpr[dec.rs1] < gpr[dec.rs2]) ? gpr[dec.rs3] : gpr[dec.rs4];
+                LNP64_OP_SEL_GEU:
+                    result = (gpr[dec.rs1] >= gpr[dec.rs2]) ? gpr[dec.rs3] : gpr[dec.rs4];
                 LNP64_OP_LW: result = {{32{lw_word[31]}}, lw_word[31:0]};
                 LNP64_OP_ISYNC: result = 64'd0;
                 LNP64_OP_MOV: result = gpr[dec.rs1];
@@ -2838,6 +2866,17 @@ module lnp64_core_tile #(
                             // v2: set-less-than (write GPR, replaces FLAGS).
                             LNP64_OP_SLT: begin
                                 gpr[dec.rd] <= {63'd0, ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2]))};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            // Fused compare-and-select (Class-A datapath mux):
+                            // rd = (rs1 <cc> rs2) ? rs3 : rs4.
+                            LNP64_OP_SEL_EQ, LNP64_OP_SEL_NE, LNP64_OP_SEL_LT,
+                            LNP64_OP_SEL_GE, LNP64_OP_SEL_LTU, LNP64_OP_SEL_GEU: begin
+                                gpr[dec.rd] <= sel_taken(dec.opcode, gpr[dec.rs1], gpr[dec.rs2])
+                                    ? gpr[dec.rs3] : gpr[dec.rs4];
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

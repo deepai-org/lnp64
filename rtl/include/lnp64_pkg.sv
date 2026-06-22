@@ -210,6 +210,14 @@ package lnp64_pkg;
         LNP64_OP_BRANCH_GEU   = 16'h009b,
         LNP64_OP_AUIPC        = 16'h009c,
         LNP64_OP_LW           = 16'h009d,
+        // Fused compare-and-select (rd = (ra <cc> rb) ? rt : rf), one per
+        // condition, mirroring the branch family.
+        LNP64_OP_SEL_EQ       = 16'h009e,
+        LNP64_OP_SEL_NE       = 16'h009f,
+        LNP64_OP_SEL_LT       = 16'h00a0,
+        LNP64_OP_SEL_GE       = 16'h00a1,
+        LNP64_OP_SEL_LTU      = 16'h00a2,
+        LNP64_OP_SEL_GEU      = 16'h00a3,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
