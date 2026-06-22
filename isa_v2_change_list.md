@@ -70,9 +70,14 @@ several decisions above and adds its own:
 ## Execution status (final reconciliation)
 
 **Done + validated:** A1-A6, B1-B3, C1-C4, E1 (callee-saved), E2 (TableGen MC
-encoder — byte-identical), E6 (uniform SchedModel), E7 (rematerializable
-LI/AUIPC). B4 recorded (transparent-cache direction; no RTL change this pass).
-Full docker gate green (sysroot smoke exit=0); cargo 471/2; RTL cosim byte-exact.
+layer — encoder byte-identical, **plus disassembler (-gen-disassembler) and
+InstPrinter (-gen-asm-writer) now generated too**; mov/li/ret are InstAliases of
+the canonical addi/jalr, one decodable instruction per opcode via isCodeGenOnly;
+only the AsmParser remains hand-written), E6 (uniform SchedModel), E7
+(rematerializable LI/AUIPC), E8 (r30 reclaimed — no reserved scratch register).
+B4 recorded (transparent-cache direction; no RTL change this pass). Full docker
+gate green (sysroot smoke exit=0; decode round-trip smokes); cargo green; RTL
+cosim byte-exact (unaffected — encoder bytes unchanged).
 
 **Resolved as already-clean / intentional (no change needed):**
 - E10 — the v1 `LNP64ISD::BR_*` custom branch nodes are already gone; v2
@@ -92,6 +97,13 @@ Full docker gate green (sysroot smoke exit=0); cargo 471/2; RTL cosim byte-exact
 - The calling convention is already `CCState`/TableGen-driven.
 
 **Deferred with rationale (optional future polish, not required for clean):**
+- E2-matcher — migrate the AsmParser to `-gen-asm-matcher`. The encoder,
+  disassembler and InstPrinter are now all TableGen-generated; the AsmParser is
+  the last hand-written MC text component (~794 lines, hand mnemonic+operand
+  parsing). A matcher migration needs AsmOperandClasses for every operand/
+  register type (incl. the custom `off(base)` memory lexing) — the highest-risk,
+  lowest-leverage MC step, since operand parsing is partly legitimately custom
+  even in clean upstream targets. Separable; deferred.
 - D2 — unify the two assembler memory syntaxes (`[base,off]` Rust asm vs
   `off(base)` LLVM). The LLVM side is already the standard form; this is a
   Rust-toolchain consistency item, separable from LLVM cleanliness.
