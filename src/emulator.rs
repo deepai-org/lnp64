@@ -2889,8 +2889,13 @@ impl Machine {
             }
             Instr::WaitableProbe(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let events = self.read_reg(events)?;
-                self.waitable_probe_index(result, fd.0, events)?;
+                match self.decode_fd_value(fd_value) {
+                    Ok(fd) => self.waitable_probe_index(result, fd, events)?,
+                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
+                };
             }
             Instr::WaitableProbeDyn(result, fd_reg, events) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -3063,10 +3068,14 @@ impl Machine {
             }
             Instr::ReadFd(fd, buf, len) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                if let Some(count) = self.read_fd_index(fd.0, addr, len)? {
-                    self.complete_ok(count as u64)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
+                        self.complete_ok(count as u64)?;
+                    }
                 }
             }
             Instr::ReadFdDyn(fd_reg, buf, len) => {
@@ -3082,10 +3091,14 @@ impl Machine {
             }
             Instr::PreadFd(fd, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 let offset = self.read_reg(offset)?;
-                self.pread_fd_index(fd.0, addr, len, offset)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.pread_fd_index(fd, addr, len, offset)?;
+                }
             }
             Instr::PreadFdDyn(fd_reg, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
@@ -3098,8 +3111,12 @@ impl Machine {
                 }
             }
             Instr::ReaddirFd(fd, dirent_buf) => {
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let addr = self.read_reg(dirent_buf)?;
-                self.readdir_fd_index(fd.0, addr)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.readdir_fd_index(fd, addr)?;
+                }
             }
             Instr::ReaddirFdDyn(fd_reg, dirent_buf) => {
                 let fd = self.read_reg(fd_reg)?;
@@ -3108,13 +3125,13 @@ impl Machine {
                     self.readdir_fd_index(fd, addr)?;
                 }
             }
-            Instr::RewinddirFd(fd) => match &mut self.process_mut()?.fds[fd.0] {
-                FdHandle::Dir { pos, .. } => {
-                    *pos = 0;
-                    self.set_status_ok()?;
+            Instr::RewinddirFd(fd) => {
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.rewinddir_fd_index(fd)?;
                 }
-                _ => self.set_status_errno(20)?,
-            },
+            }
             Instr::RewinddirFdDyn(fd_reg) => {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
@@ -3123,9 +3140,13 @@ impl Machine {
             }
             Instr::WriteFd(fd, buf, len) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                self.write_fd_index(fd.0, addr, len)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.write_fd_index(fd, addr, len)?;
+                }
             }
             Instr::WriteFdDyn(fd_reg, buf, len) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
@@ -3138,10 +3159,14 @@ impl Machine {
             }
             Instr::PwriteFd(fd, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 let offset = self.read_reg(offset)?;
-                self.pwrite_fd_index(fd.0, addr, len, offset)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.pwrite_fd_index(fd, addr, len, offset)?;
+                }
             }
             Instr::PwriteFdDyn(fd_reg, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
@@ -3447,8 +3472,12 @@ impl Machine {
                 self.utime_path(&path, times_ptr, flags)?;
             }
             Instr::UtimeFd(fd, times_reg) => {
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let times_ptr = self.read_reg(times_reg)?;
-                self.utime_fd_index(fd.0, times_ptr)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.utime_fd_index(fd, times_ptr)?;
+                }
             }
             Instr::UtimeFdDyn(fd_reg, times_reg) => {
                 let fd = self.read_reg(fd_reg)?;
@@ -3499,8 +3528,12 @@ impl Machine {
                 }
             }
             Instr::StatFd(statbuf_reg, fd) => {
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
                 let statbuf = self.read_reg(statbuf_reg)?;
-                self.stat_fd_index(statbuf, fd.0)?;
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.stat_fd_index(statbuf, fd)?;
+                }
             }
             Instr::StatFdDyn(statbuf_reg, fd_reg) => {
                 let statbuf = self.read_reg(statbuf_reg)?;
@@ -3518,7 +3551,11 @@ impl Machine {
                 }
             }
             Instr::FdClose(fd) => {
-                self.close_fd_index_checked(fd.0)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.close_fd_index_checked(fd)?;
+                }
             }
             Instr::FdCloseDyn(fd_reg) => {
                 let fd = self.read_reg(fd_reg)?;
@@ -3527,9 +3564,13 @@ impl Machine {
                 }
             }
             Instr::FdSeek(fd, offset_reg, whence_reg) => {
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let offset = self.read_reg(offset_reg)? as i64;
                 let whence = self.read_reg(whence_reg)?;
-                self.fd_seek_index(fd.0, offset, whence)?;
+                if let Some(fd) = self.checked_fd_index(fd_value)? {
+                    self.fd_seek_index(fd, offset, whence)?;
+                }
             }
             Instr::FdSeekDyn(fd_reg, offset_reg, whence_reg) => {
                 let fd = self.read_reg(fd_reg)?;
@@ -3540,15 +3581,16 @@ impl Machine {
                 }
             }
             Instr::WaitOnFd(fd, _) => {
-                if fd.0 >= FDR_COUNT {
-                    self.set_status_errno(9)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                let Some(fd) = self.checked_fd_index(fd_value)? else {
+                    return Ok(true);
+                };
+                if self.ensure_fd_right(fd, CAP_RIGHT_POLL).is_err() {
                     return Ok(true);
                 }
-                if self.ensure_fd_right(fd.0, CAP_RIGHT_POLL).is_err() {
-                    return Ok(true);
-                }
-                if !self.fd_ready(fd.0)? {
-                    self.push_fd_waiter(fd.0, 0, None)?;
+                if !self.fd_ready(fd)? {
+                    self.push_fd_waiter(fd, 0, None)?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -3857,7 +3899,13 @@ impl Machine {
                 }
                 let hint = self.read_reg(hint)?;
                 let offset = self.read_reg(offset)?;
-                let file = self.process()?.fds[fd.0].file_clone()?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value; a value
+                // that doesn't resolve to a file-backed fd yields an anonymous map.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                let file = match self.decode_fd_value(fd_value) {
+                    Ok(idx) => self.process()?.fds[idx].file_clone()?,
+                    Err(_) => None,
+                };
                 if !self.domain_allows_executable_source(prot, file.is_some())? {
                     self.set_status_errno(1)?;
                     self.write_reg(dst, -1i64 as u64)?;
@@ -4226,9 +4274,16 @@ impl Machine {
                 self.ns_ctl(result, self.read_reg(argblock)?)?;
             }
             Instr::CallCap(result, call_gate, arg0, arg1) => {
+                // ISA-v2: call-gate operand is a GPR holding the fd handle value.
+                Self::ensure_result_reg_writable(result)?;
+                let Some(call_gate_fd) = self.checked_fd_index(self.read_reg(Reg(call_gate.0))?)?
+                else {
+                    self.complete_reg_err(result, 9)?;
+                    return Ok(true);
+                };
                 self.call_cap(
                     result,
-                    call_gate.0,
+                    call_gate_fd,
                     self.read_reg(arg0)?,
                     self.read_reg(arg1)?,
                 )?;
@@ -17535,8 +17590,9 @@ mod tests {
               BNE r2, r0, bad
               LI r12, dup_msg
               LI r13, 1
-              WRITE_FD fd5, r12, r13
-              READ_FD fd3, r15, r13
+              LI r28, 5          # fd handle for the dup target slot (5)
+              WRITE_FD fd28, r12, r13
+              READ_FD fd27, r15, r13    # r27 still holds 3 (pipe reader)
               BNE r2, r13, bad
               LD.B r16, [r15, 0]
               LI r17, 33
@@ -17574,16 +17630,17 @@ mod tests {
               LI r2, 4
               OPEN_FD fd3, r1, r2
               BNE r2, r0, bad
+              LI r13, 3          # fd handle value for the slot OPEN_FD installed
 
               LI r3, patch
               LI r4, 2
               LI r5, 2
-              PWRITE_FD fd3, r3, r4, r5
+              PWRITE_FD fd13, r3, r4, r5
               BNE r2, r4, bad
 
               LI r6, 6
               ALLOC r7, r6
-              PREAD_FD fd3, r7, r6, r0
+              PREAD_FD fd13, r7, r6, r0
               BNE r2, r6, bad
               LD.B r8, [r7, 0]
               LI r9, 97
@@ -19662,6 +19719,7 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         let original_generation = machine.fd_generation(7).unwrap();
+        machine.thread_mut().unwrap().regs[7] = 7;
 
         assert!(machine.exec(Instr::FdClose(FdReg(7))).unwrap());
         assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
@@ -19941,6 +19999,7 @@ mod tests {
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 3, 4);
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[3] = 3;
         machine.set_errno(123).unwrap();
 
         machine
@@ -19975,6 +20034,7 @@ mod tests {
             process.fd_capabilities[3] = FdCapability::full(3);
         }
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[3] = 3;
         machine.set_errno(123).unwrap();
 
         assert!(
@@ -20009,6 +20069,7 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[7] = 7;
 
         machine
             .exec(Instr::WaitableProbe(Reg(5), FdReg(7), Reg(2)))
@@ -20135,9 +20196,13 @@ mod tests {
     fn wait_on_fd_rejects_invalid_sources_without_parking() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
+        // ISA-v2: fd operands are GPRs holding the fd handle value. r10 names an
+        // out-of-range handle (FDR_COUNT), r7 an unallocated fd (7), r3 the pipe.
+        machine.thread_mut().unwrap().regs[10] = FDR_COUNT as u64;
+        machine.thread_mut().unwrap().regs[7] = 7;
 
         let keep_ready = machine
-            .exec(Instr::WaitOnFd(FdReg(FDR_COUNT), Reg(0)))
+            .exec(Instr::WaitOnFd(FdReg(10), Reg(0)))
             .unwrap();
         assert!(keep_ready);
         assert!(machine.ready.contains(&1));
@@ -20152,6 +20217,7 @@ mod tests {
 
         create_pipe_pair(&mut machine, 3, 4);
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
+        machine.thread_mut().unwrap().regs[3] = 3;
         let keep_ready = machine.exec(Instr::WaitOnFd(FdReg(3), Reg(0))).unwrap();
         assert!(keep_ready);
         assert!(machine.ready.contains(&1));
@@ -23276,9 +23342,10 @@ mod tests {
               OBJECT_CTL r21, r12
               BEQ r21, r11, bad
 
+              LI r13, 3
               LI r1, 7
               LI r2, 9
-              CALL_CAP r22, fd3, r1, r2
+              CALL_CAP r22, fd13, r1, r2
               LI r23, 16
               BNE r22, r23, bad
               LI r23, 9
