@@ -262,11 +262,6 @@ pub enum Instr {
     // Wait rd, rs1(waitset-descriptor ptr), rs2(timeout) -> rd = #ready or -errno.
     // Collapses await/await_ex/waitable_probe/futex_wait/thread_join/wait_pid/sleep/alarm.
     Wait(Reg, Reg, Reg),
-    // RingSetup rd, rs1(config ptr {sq_ptr, cq_ptr, depth}) -> rd = ring handle.
-    RingSetup(Reg, Reg),
-    // RingEnter rd, rs1(ring handle), rs2(params ptr {n_submit, min_complete, timeout})
-    //   -> rd = #completions reaped. The async face of send/recv/wait.
-    RingEnter(Reg, Reg, Reg),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

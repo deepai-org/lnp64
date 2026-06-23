@@ -407,7 +407,6 @@ enum FdHandle {
     PipeReader(Rc<RefCell<PipeBuffer>>),
     PipeWriter(Rc<RefCell<PipeBuffer>>),
     Endpoint(Rc<RefCell<EndpointState>>),
-    Ring(Rc<RefCell<RingState>>),
     Counter(Rc<RefCell<u64>>),
     EventCounter {
         value: Rc<RefCell<u64>>,
@@ -466,7 +465,6 @@ impl FdHandle {
             FdHandle::PipeReader(buffer) => Ok(FdHandle::PipeReader(Rc::clone(buffer))),
             FdHandle::PipeWriter(buffer) => Ok(FdHandle::PipeWriter(Rc::clone(buffer))),
             FdHandle::Endpoint(state) => Ok(FdHandle::Endpoint(Rc::clone(state))),
-            FdHandle::Ring(state) => Ok(FdHandle::Ring(Rc::clone(state))),
             FdHandle::Counter(value) => Ok(FdHandle::Counter(Rc::clone(value))),
             FdHandle::EventCounter { value, semaphore } => Ok(FdHandle::EventCounter {
                 value: Rc::clone(value),
@@ -606,16 +604,6 @@ struct EndpointMessage {
     caps: Vec<CapabilityPayload>,
 }
 
-/// Completion ring (`unified_object_model.md` §10): the async face of the four
-/// verbs, frozen into the ISA. The SQ/CQ live in guest memory registered at
-/// setup; `ring_enter` submits a bounded batch of SQEs and reaps CQEs. A ring
-/// is itself an endpoint (waitable), so `wait` needs no new concept.
-struct RingState {
-    sq_ptr: u64,
-    cq_ptr: u64,
-    depth: u64,
-}
-
 /// Frozen IPC message-descriptor layout (bytes); see `unified_object_model.md`.
 /// `send` reads the in-fields; `recv` reads buffer fields in and writes the
 /// actual transferred counts back. Forward-compatible with the ring SQE/CQE.
@@ -634,22 +622,6 @@ const WAITSET_ENTRY_SIZE: u64 = 24;
 const WAITSET_ENTRY_HANDLE: u64 = 0; // u64: endpoint handle value
 const WAITSET_ENTRY_EVENTS: u64 = 8; // u64: requested POSIX events mask
 const WAITSET_ENTRY_REVENTS: u64 = 16; // u64: returned revents (written back)
-
-/// Frozen completion-ring SQE/CQE binary layout (`unified_object_model.md` §10).
-/// An SQE is a deferred verb; a CQE its result. Both fixed-size so the engine
-/// drains a bounded batch (WCET). SQE caps are cap-table handles resolved
-/// against the *submitter's* table — writing an SQE forges no authority.
-const SQE_SIZE: u64 = 64;
-const SQE_OPCODE: u64 = 0; // u64: verb opcode (0x83 send / 0x84 recv)
-const SQE_EP_HANDLE: u64 = 8; // u64: target endpoint handle value
-const SQE_MSG_DESC: u64 = 16; // u64: message-descriptor pointer
-const SQE_USER_TAG: u64 = 24; // u64: opaque tag echoed into the CQE
-const CQE_SIZE: u64 = 32;
-const CQE_USER_TAG: u64 = 0; // u64: echoed SQE tag
-const CQE_STATUS: u64 = 8; // i64: bytes transferred, or -errno
-const CQE_RESULT: u64 = 16; // u64: verb result (e.g. bytes)
-/// Frozen max ring depth (bounds the per-`ring_enter` drain batch → WCET).
-const RING_MAX_DEPTH: u64 = 1024;
 
 impl PipeBuffer {
     fn can_push_bytes(&self, len: usize) -> bool {
@@ -2199,9 +2171,7 @@ impl Machine {
             0x83 => Instr::Send(a, b, c),
             0x84 => Instr::Recv(a, b, c),
             0x86 => Instr::Wait(a, b, c),
-            0x87 => Instr::RingEnter(a, b, c),
             0x88 => Instr::EndpointCreate(a, b),
-            0x89 => Instr::RingSetup(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -4348,15 +4318,6 @@ impl Machine {
                 let timeout = self.read_reg(timeout)?;
                 return self.ep_wait(result, waitset, timeout);
             }
-            Instr::RingSetup(result, config) => {
-                let config = self.read_reg(config)?;
-                self.ring_setup(result, config)?;
-            }
-            Instr::RingEnter(result, ring, params) => {
-                let ring_value = self.read_reg(ring)?;
-                let params = self.read_reg(params)?;
-                self.ring_enter(result, ring_value, params)?;
-            }
             Instr::CapSend(result, argblock) => {
                 self.cap_send(result, self.read_reg(argblock)?)?;
             }
@@ -5817,7 +5778,6 @@ impl Machine {
             FdHandle::Stdin
             | FdHandle::MessageEndpoint
             | FdHandle::Endpoint(_)
-            | FdHandle::Ring(_)
             | FdHandle::Dir { .. }
             | FdHandle::PipeReader(_)
             | FdHandle::MemoryObject { .. }
@@ -6307,7 +6267,6 @@ impl Machine {
             | FdHandle::Stderr
             | FdHandle::MessageEndpoint
             | FdHandle::Endpoint(_)
-            | FdHandle::Ring(_)
             | FdHandle::Dir { .. }
             | FdHandle::PipeWriter(_)
             | FdHandle::TcpSocket { .. }
@@ -6702,93 +6661,6 @@ impl Machine {
         }
         self.ready.retain(|t| *t != tid);
         Ok(false)
-    }
-
-    // ---- Completion ring (unified_object_model.md §10) --------------------
-
-    fn ring_setup(&mut self, result: Reg, config: u64) -> Result<(), String> {
-        Self::ensure_result_reg_writable(result)?;
-        let sq_ptr = self.load_u64_offset(config, 0)?;
-        let cq_ptr = self.load_u64_offset(config, 8)?;
-        let depth = self.load_u64_offset(config, 16)?;
-        if depth == 0 || depth > RING_MAX_DEPTH {
-            self.complete_reg_err(result, 22)?; // EINVAL — depth out of frozen range
-            return Ok(());
-        }
-        if self.ensure_domain_budget_errno(0, 0, 0, 1).is_err() {
-            self.complete_reg_err(result, 12)?;
-            return Ok(());
-        }
-        let state = Rc::new(RefCell::new(RingState { sq_ptr, cq_ptr, depth }));
-        match self.alloc_fd_handle(FdHandle::Ring(state))? {
-            Some(fd) => {
-                let token = self.fd_token(fd)?;
-                self.set_errno(0)?;
-                self.complete_reg_ok(result, token)?;
-            }
-            None => self.complete_reg_err(result, 24)?,
-        }
-        Ok(())
-    }
-
-    fn ring_enter(&mut self, result: Reg, ring_value: u64, params: u64) -> Result<(), String> {
-        Self::ensure_result_reg_writable(result)?;
-        match self.ring_enter_inner(ring_value, params) {
-            Ok(completed) => self.complete_reg_ok(result, completed)?,
-            Err(errno) => self.complete_reg_err(result, errno)?,
-        }
-        Ok(())
-    }
-
-    fn ring_enter_inner(&mut self, ring_value: u64, params: u64) -> Result<u64, u64> {
-        let fd = self.decode_fd_value(ring_value)?;
-        let (sq_ptr, cq_ptr, depth) = match self.process().map_err(|_| 3u64)?.fds.get(fd) {
-            Some(FdHandle::Ring(state)) => {
-                let st = state.borrow();
-                (st.sq_ptr, st.cq_ptr, st.depth)
-            }
-            Some(_) => return Err(95), // ENOTSUP — not a ring
-            None => return Err(9),
-        };
-        let n_submit = self.load_u64_offset(params, 0).map_err(|_| 14u64)?;
-        let min_complete = self.load_u64_offset(params, 8).map_err(|_| 14u64)?;
-        // Bounded drain: a single ring_enter processes at most `depth` SQEs (WCET).
-        if n_submit > depth || min_complete > n_submit {
-            return Err(22);
-        }
-        // Each SQE is a deferred verb; execute it synchronously against the
-        // submitter's cap table and post a CQE. Cap-safety is inherited from
-        // ep_send_inner/ep_recv_inner, which resolve handles against this domain.
-        let mut completed: u64 = 0;
-        for i in 0..n_submit {
-            let sqe = sq_ptr
-                .checked_add(i.checked_mul(SQE_SIZE).ok_or(22u64)?)
-                .ok_or(22u64)?;
-            let opcode = self.load_u64_offset(sqe, SQE_OPCODE).map_err(|_| 14u64)?;
-            let ep_handle = self.load_u64_offset(sqe, SQE_EP_HANDLE).map_err(|_| 14u64)?;
-            let msg_desc = self.load_u64_offset(sqe, SQE_MSG_DESC).map_err(|_| 14u64)?;
-            let user_tag = self.load_u64_offset(sqe, SQE_USER_TAG).map_err(|_| 14u64)?;
-            let (status, value): (i64, u64) = match opcode {
-                0x83 => match self.ep_send_inner(ep_handle, msg_desc) {
-                    Ok(n) => (n as i64, n),
-                    Err(errno) => (-(errno as i64), 0),
-                },
-                0x84 => match self.ep_recv_inner(ep_handle, msg_desc) {
-                    Ok(n) => (n as i64, n),
-                    Err(errno) => (-(errno as i64), 0),
-                },
-                _ => (-(22i64), 0), // EINVAL — unsupported ring verb
-            };
-            let cqe = cq_ptr
-                .checked_add(i.checked_mul(CQE_SIZE).ok_or(22u64)?)
-                .ok_or(22u64)?;
-            self.store_u64_offset(cqe, CQE_USER_TAG, user_tag).map_err(|_| 14u64)?;
-            self.store_u64_offset(cqe, CQE_STATUS, status as u64).map_err(|_| 14u64)?;
-            self.store_u64_offset(cqe, CQE_RESULT, value).map_err(|_| 14u64)?;
-            completed += 1;
-        }
-        self.set_errno(0).map_err(|_| 3u64)?;
-        Ok(completed)
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
@@ -10495,7 +10367,6 @@ impl Machine {
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
             }
             FdHandle::Endpoint(state) => Ok(!state.borrow().messages.is_empty()),
-            FdHandle::Ring(_) => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
                     return Ok(true);
@@ -10583,7 +10454,6 @@ impl Machine {
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
             }
             FdHandle::Endpoint(state) => Ok(!state.borrow().messages.is_empty()),
-            FdHandle::Ring(_) => Ok(false),
             FdHandle::DmaBuffer { .. } | FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
@@ -12229,81 +12099,6 @@ mod tests {
         assert!(keep_ready);
         assert_eq!(machine.thread().unwrap().regs[7], 1);
         assert!(machine.fd_waiters.is_empty());
-    }
-
-    #[test]
-    fn ring_enter_drains_send_sqe_posts_cqe_and_delivers_message() {
-        let mut machine = Machine::new(empty_program());
-        machine.current_tid = 1;
-        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
-        let ep = machine.thread().unwrap().regs[2];
-
-        // Ring with SQ/CQ in guest memory.
-        let cfg = ARG_BASE + 0x800;
-        let sq = ARG_BASE + 0x1000;
-        let cq = ARG_BASE + 0x2000;
-        machine.store_u64(cfg + 0, sq).unwrap();
-        machine.store_u64(cfg + 8, cq).unwrap();
-        machine.store_u64(cfg + 16, 8).unwrap(); // depth
-        machine.thread_mut().unwrap().regs[10] = cfg;
-        machine.exec(Instr::RingSetup(Reg(8), Reg(10))).unwrap();
-        let ring = machine.thread().unwrap().regs[8];
-        assert_ne!(ring, -1i64 as u64);
-
-        // Message + descriptor for a deferred `send`.
-        let desc = ARG_BASE + 0x100;
-        let payload = ARG_BASE + 0x200;
-        machine.write_bytes(payload, b"ring!").unwrap();
-        write_msg_desc(&mut machine, desc, payload, 5, 0, 0);
-
-        // SQE[0] = send(ep, desc), tag 0xABCD.
-        machine.store_u64(sq + SQE_OPCODE, 0x83).unwrap();
-        machine.store_u64(sq + SQE_EP_HANDLE, ep).unwrap();
-        machine.store_u64(sq + SQE_MSG_DESC, desc).unwrap();
-        machine.store_u64(sq + SQE_USER_TAG, 0xABCD).unwrap();
-
-        // params { n_submit=1, min_complete=1, timeout=0 }.
-        let params = ARG_BASE + 0x900;
-        machine.store_u64(params + 0, 1).unwrap();
-        machine.store_u64(params + 8, 1).unwrap();
-        machine.store_u64(params + 16, 0).unwrap();
-        machine.thread_mut().unwrap().regs[11] = params;
-        machine.exec(Instr::RingEnter(Reg(9), Reg(8), Reg(11))).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[9], 1);
-
-        // CQE[0] echoes the tag and reports 5 bytes.
-        assert_eq!(machine.load_u64(cq + CQE_USER_TAG).unwrap(), 0xABCD);
-        assert_eq!(machine.load_u64(cq + CQE_STATUS).unwrap(), 5);
-        assert_eq!(machine.load_u64(cq + CQE_RESULT).unwrap(), 5);
-
-        // The deferred send actually delivered: a recv now yields the bytes.
-        let recv_desc = ARG_BASE + 0x300;
-        write_msg_desc(&mut machine, recv_desc, ARG_BASE + 0x400, 16, 0, 0);
-        machine.thread_mut().unwrap().regs[6] = recv_desc;
-        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[5], 5);
-        assert_eq!(machine.read_bytes(ARG_BASE + 0x400, 5).unwrap(), b"ring!".to_vec());
-    }
-
-    #[test]
-    fn ring_enter_rejects_oversized_submit_batch() {
-        let mut machine = Machine::new(empty_program());
-        machine.current_tid = 1;
-        let cfg = ARG_BASE + 0x800;
-        machine.store_u64(cfg + 0, ARG_BASE + 0x1000).unwrap();
-        machine.store_u64(cfg + 8, ARG_BASE + 0x2000).unwrap();
-        machine.store_u64(cfg + 16, 4).unwrap(); // depth = 4
-        machine.thread_mut().unwrap().regs[10] = cfg;
-        machine.exec(Instr::RingSetup(Reg(8), Reg(10))).unwrap();
-
-        let params = ARG_BASE + 0x900;
-        machine.store_u64(params + 0, 5).unwrap(); // n_submit > depth
-        machine.store_u64(params + 8, 1).unwrap();
-        machine.store_u64(params + 16, 0).unwrap();
-        machine.thread_mut().unwrap().regs[11] = params;
-        machine.exec(Instr::RingEnter(Reg(9), Reg(8), Reg(11))).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
-        assert_eq!(machine.process().unwrap().errno, 22);
     }
 
     #[test]

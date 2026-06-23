@@ -250,18 +250,10 @@ bounded-ring WCET + ring-cap-safety proofs (E4) pass.
 | 0x88 | `endpoint_create` | `rd, rs1(hint)` | mint an endpoint cap; rd=handle | **emulator** |
 | 0x2f | `gate_call` | (existing) | the `call` verb — cross-domain migrating gate, 3 modes | **built + M2-proven** |
 | 0x86 | `wait` | `rd, rs1(waitset), rs2(timeout)` | poll/block until an edge in the set fires; rd=#ready | **emulator** |
-| 0x87 | `ring_enter` | `rd, rs1(ring), rs2(params{n_submit,min_complete,timeout})` | submit SQEs + reap CQEs; rd=#completed | **emulator** |
-| 0x89 | `ring_setup` | `rd, rs1(config{sq_ptr,cq_ptr,depth})` | mint a ring endpoint; rd=handle | **emulator** |
+| 0x87 | `ring_enter` | `rd, rs1(ring), rs2(submit/min/timeout block)` | submit SQEs + reap CQEs | reserved |
 
 The `call` verb is the existing `GATE_CALL` (`call_cap`) at 0x2f — no new opcode;
 `0x85` stays free.
-
-**Frozen SQE/CQE layout** (§10). SQE = 64 bytes: `[0]=opcode` (0x83 send /
-0x84 recv), `[8]=ep_handle`, `[16]=msg_desc_ptr`, `[24]=user_tag`. CQE = 32
-bytes: `[0]=user_tag`, `[8]=status` (i64 bytes or -errno), `[16]=result`. Ring
-depth ≤ 1024 (bounds the per-`ring_enter` drain batch → WCET). SQE caps are
-cap-table handles resolved against the *submitter's* table — writing an SQE
-forges no authority.
 
 **Message descriptor** (frozen, in guest memory): `[0]=bytes_ptr`,
 `[8]=bytes_len` (send in; recv buffer-cap in / actual out), `[16]=caps_ptr`

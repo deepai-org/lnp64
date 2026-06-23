@@ -22,7 +22,7 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | EP-B `send` / `recv` verbs over endpoint handles (non-blocking; byte-fd delegation TBD) | emulator | **done** |
 | EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | **done** (poll + block-until-edge; timed wakeup TBD) |
 | EP-D `gate_call`/`gate_return` = the `call` verb (cross-domain migrating gate) | emulator | **built + M2-proven** (existing 0x2f) |
-| EP-E async completion ring: SQE/CQE layout freeze + ring engine + `ring_setup`/`ring_enter` | emulator | **done** (emulator; schema/RTL gated on EP-F) |
+| EP-E async completion ring: SQE/CQE schema freeze + ring engine + `ring_enter`/wait-on-ring | emulator + schema | pending |
 | EP-F bounded-ring WCET + ring cap-safety proofs (E4 — **gate before RTL**) | formal | pending |
 | EP-G LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | pending |
 | EP-H RTL IPC/Gate engine (only after EP-F) | rtl | blocked on EP-F |
@@ -57,9 +57,3 @@ compositional-schedulability + WCET proofs before any RTL.
   (timeout=0) + block-until-edge (re-poll on wake via the fd-waiter park model);
   POLLNVAL for bad handles. 4 unit tests; 480 cargo pass. (Timed wakeup on a
   finite timeout still TBD — matches AwaitDyn's current nonzero=block.)
-- EP-E: completion ring (`ring_setup` 0x89, `ring_enter` 0x87) — frozen 64-byte
-  SQE / 32-byte CQE; bounded drain (depth ≤ 1024); each SQE is a deferred
-  send/recv dispatched via ep_send_inner/ep_recv_inner, so ring cap-safety is
-  inherited (handles resolve against the submitter's table). 2 unit tests
-  (drain+deliver+CQE, oversize-batch EINVAL); 482 cargo pass. Schema freeze +
-  RTL gated on the EP-F proofs.
