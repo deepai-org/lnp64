@@ -6558,12 +6558,18 @@ impl Machine {
         // Backing-dispatch collapse (unified_object_model.md §3): for byte-fd
         // (pipe/socket/file) and Register-backed (counter/eventfd) endpoints,
         // `send` is the existing write — subsuming push/write_fd/futex_wake.
-        // Caps over non-endpoint backings (SCM_RIGHTS-style) are still TBD.
         let bytes_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR)?;
         let bytes_len = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN)?;
+        let caps_ptr = self.load_u64_offset(desc, MSG_DESC_CAPS_PTR)?;
         let caps_len = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN)?;
+        // SCM_RIGHTS over a Thread-backed byte-fd: a message that names caps
+        // carries them alongside the bytes on the channel's capability FIFO
+        // (subsuming cap_send). Caps over a real socket/file are not meaningful.
         if caps_len != 0 {
-            self.complete_reg_err(result, 95)?; // ENOTSUP
+            match self.ep_send_bytefd_caps(fd, bytes_ptr, bytes_len, caps_ptr, caps_len) {
+                Ok(count) => self.complete_reg_ok(result, count)?,
+                Err(errno) => self.complete_reg_err(result, errno)?,
+            }
             return Ok(());
         }
         // "Notify = empty message": an empty `send` to a Register-backed endpoint
@@ -6661,9 +6667,15 @@ impl Machine {
         // existing read — subsuming pull/read_fd/eventfd-read/counter-read.
         let buf_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR)?;
         let buf_cap = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN)?;
-        let caps_len = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN)?;
-        if caps_len != 0 {
-            self.complete_reg_err(result, 95)?; // ENOTSUP
+        let caps_ptr = self.load_u64_offset(desc, MSG_DESC_CAPS_PTR)?;
+        let caps_cap = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN)?;
+        // SCM_RIGHTS over a Thread-backed byte-fd: drain bytes and any caps that
+        // arrived on the channel's capability FIFO (subsuming cap_recv).
+        if caps_cap != 0 {
+            match self.ep_recv_bytefd_caps(fd, buf_ptr, buf_cap, caps_ptr, caps_cap, desc) {
+                Ok(count) => self.complete_reg_ok(result, count)?,
+                Err(errno) => self.complete_reg_err(result, errno)?,
+            }
             return Ok(());
         }
         match self.read_fd_index(fd, buf_ptr, buf_cap as usize)? {
@@ -6736,6 +6748,138 @@ impl Machine {
         self.bump_fd_generation(dst).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[dst] = payload.handle;
         self.fd_token(dst).map_err(|_| 9u64)
+    }
+
+    /// `send` of a (bytes, caps) message over a Thread-backed byte-fd
+    /// (pipe/socket) — SCM_RIGHTS. The caps ride the channel's capability FIFO
+    /// alongside the bytes, resolving against the *sender's* table exactly as
+    /// the Memory-backed endpoint does (names-are-data). Subsumes cap_send.
+    /// Resolve-all-then-commit so a bad handle leaves the channel untouched.
+    fn ep_send_bytefd_caps(
+        &mut self,
+        fd: usize,
+        bytes_ptr: u64,
+        bytes_len: u64,
+        caps_ptr: u64,
+        caps_len: u64,
+    ) -> Result<u64, u64> {
+        if caps_len > MSG_MAX_CAPS {
+            return Err(22);
+        }
+        self.fd_right_errno(fd, CAP_RIGHT_WRITE | CAP_RIGHT_TRANSFER)?;
+        let queue = match self.process().map_err(|_| 3u64)?.fds.get(fd).ok_or(9u64)? {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            // Caps over a real socket/file have no in-model carrier.
+            _ => return Err(95), // ENOTSUP
+        };
+        // Fail closed (no partial transfer) if either the bytes or the caps
+        // would not fit the channel's bounds.
+        {
+            let q = queue.borrow();
+            if !q.can_push_bytes(bytes_len as usize) {
+                return Err(11); // EAGAIN
+            }
+            if q.capabilities.len().saturating_add(caps_len as usize) > PIPE_CAPABILITY_LIMIT {
+                return Err(11); // EAGAIN
+            }
+        }
+        // Resolve every cap handle against the sender's table before committing.
+        let mut payloads = Vec::with_capacity(caps_len as usize);
+        for i in 0..caps_len {
+            let handle_value = self
+                .load_u64_offset(caps_ptr, i.checked_mul(8).ok_or(22u64)?)
+                .map_err(|_| 14u64)?;
+            let src = self.decode_fd_value(handle_value)?;
+            self.fd_right_errno(src, CAP_RIGHT_TRANSFER)?;
+            let process = self.process().map_err(|_| 3u64)?;
+            let handle = process
+                .fds
+                .get(src)
+                .ok_or(9u64)?
+                .clone_handle()
+                .map_err(|_| 9u64)?;
+            let capability = process.fd_capabilities.get(src).copied().ok_or(9u64)?;
+            if capability.revoked {
+                return Err(116);
+            }
+            payloads.push(CapabilityPayload { handle, capability });
+        }
+        let bytes = if bytes_len == 0 {
+            Vec::new()
+        } else {
+            self.read_bytes(bytes_ptr, bytes_len as usize).map_err(|_| 14u64)?
+        };
+        {
+            let mut q = queue.borrow_mut();
+            q.push_bytes(&bytes)?;
+            for payload in payloads {
+                q.push_capability(payload)?;
+            }
+        }
+        self.poll_fd_waiters();
+        Ok(bytes_len)
+    }
+
+    /// `recv` of a (bytes, caps) message over a Thread-backed byte-fd. Drains
+    /// the available bytes and up to `caps_cap` caps from the channel's FIFO,
+    /// installing each into the *receiver's* table (verbatim authority — never
+    /// amplified). Writes the actual transferred counts back. Subsumes cap_recv.
+    fn ep_recv_bytefd_caps(
+        &mut self,
+        fd: usize,
+        buf_ptr: u64,
+        buf_cap: u64,
+        caps_ptr: u64,
+        caps_cap: u64,
+        desc: u64,
+    ) -> Result<u64, u64> {
+        self.fd_right_errno(fd, CAP_RIGHT_READ | CAP_RIGHT_TRANSFER)?;
+        let queue = match self.process().map_err(|_| 3u64)?.fds.get(fd).ok_or(9u64)? {
+            FdHandle::PipeReader(queue) => Rc::clone(queue),
+            _ => return Err(95), // ENOTSUP
+        };
+        let avail_caps = queue
+            .borrow()
+            .capabilities
+            .len()
+            .min(caps_cap as usize);
+        // A revoked cap at the head fails closed without consuming.
+        if avail_caps > 0 {
+            let head_revoked = queue
+                .borrow()
+                .capabilities
+                .front()
+                .map(|payload| payload.capability.revoked)
+                .unwrap_or(false);
+            if head_revoked {
+                return Err(116);
+            }
+        }
+        // Reserve receiver fd slots up front so cap install can't half-fail.
+        self.ensure_domain_budget_errno(0, 0, 0, avail_caps as u64)?;
+        // Bytes via the existing pipe read path.
+        let bytes_read = match self
+            .read_fd_index(fd, buf_ptr, buf_cap as usize)
+            .map_err(|_| 14u64)?
+        {
+            Some(count) => count as u64,
+            None => return Err(self.process().map_err(|_| 3u64)?.errno.max(11)),
+        };
+        for i in 0..avail_caps {
+            let payload = queue.borrow_mut().capabilities.pop_front().ok_or(11u64)?;
+            if payload.capability.revoked {
+                return Err(116);
+            }
+            let token = self.install_received_cap(payload)?;
+            self.store_u64_offset(caps_ptr, (i as u64).checked_mul(8).ok_or(22u64)?, token)
+                .map_err(|_| 14u64)?;
+        }
+        self.store_u64_offset(desc, MSG_DESC_BYTES_LEN, bytes_read)
+            .map_err(|_| 14u64)?;
+        self.store_u64_offset(desc, MSG_DESC_CAPS_LEN, avail_caps as u64)
+            .map_err(|_| 14u64)?;
+        self.poll_fd_waiters();
+        Ok(bytes_read)
     }
 
     // `wait(waitset, timeout)` — the unified wait verb. Blocks until any edge in
@@ -12103,6 +12247,47 @@ mod tests {
         machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 11);
+    }
+
+    #[test]
+    fn endpoint_send_recv_transfers_caps_over_pipe_scm_rights() {
+        // EP-G: `send`/`recv` carry caps over a Thread-backed byte-fd
+        // (pipe) — SCM_RIGHTS — subsuming cap_send/cap_recv.
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (read_token, write_token) = create_pipe_pair(&mut machine, 3, 4);
+        let cap_token = create_memory_source(&mut machine, 5);
+
+        let send_desc = ARG_BASE + 0x100;
+        let payload = ARG_BASE + 0x200;
+        let send_caps = ARG_BASE + 0x280;
+        machine.write_bytes(payload, b"hi").unwrap();
+        machine.store_u64(send_caps, cap_token).unwrap();
+        write_msg_desc(&mut machine, send_desc, payload, 2, send_caps, 1);
+        machine.thread_mut().unwrap().regs[2] = write_token;
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 2, "send returned byte count");
+
+        let recv_desc = ARG_BASE + 0x300;
+        let recv_buf = ARG_BASE + 0x400;
+        let recv_caps = ARG_BASE + 0x480;
+        write_msg_desc(&mut machine, recv_desc, recv_buf, 64, recv_caps, 4);
+        machine.thread_mut().unwrap().regs[2] = read_token;
+        machine.thread_mut().unwrap().regs[6] = recv_desc;
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 2, "recv returned byte count");
+        assert_eq!(machine.read_bytes(recv_buf, 2).unwrap(), b"hi".to_vec());
+        assert_eq!(machine.load_u64(recv_desc + MSG_DESC_CAPS_LEN).unwrap(), 1, "one cap delivered");
+        let installed = machine.load_u64(recv_caps).unwrap();
+        let fd = machine.decode_fd_value(installed).unwrap();
+        assert!(
+            matches!(machine.process().unwrap().fds[fd], FdHandle::MemoryObject { .. }),
+            "installed cap is a usable memory-object fd"
+        );
+        // FIFO drained: a second recv finds no caps.
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.load_u64(recv_desc + MSG_DESC_CAPS_LEN).unwrap(), 0);
     }
 
     #[test]
