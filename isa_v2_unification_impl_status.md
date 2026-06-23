@@ -91,3 +91,34 @@ compositional-schedulability + WCET proofs before any RTL.
   and `wx_preserved` (monotone narrowing cannot mint a W+X region). `CapImpl.v`
   refinement updated to match. Full coq gate green in `lnp64-coq-koika`
   (coqc + coqchk, **axioms <none>**).
+
+## Remaining items — accurate status vs. the design's own gating
+
+- **Signal-fold (§6) — structurally already realized.** The design §6 states the
+  emulator *already* delivers signals via a per-thread, generation-checked
+  signal-frame stack (`deliver_signal_if_needed`; `SIGRET` pops it) that is the
+  **same continuation stack as the gate's** — which is exactly why M2 carries
+  `signal_compatibility_ok`. So "signal = async-upcall mode of an endpoint,
+  SIGRET = gate_return" is a *naming* re-expression of a built+proven mechanism,
+  not new behaviour. Remaining: spelling `kill` as `send`/`sigaction` as
+  register-upcall (cosmetic alias) — deferred to avoid churning working,
+  M2-proven signal delivery for no semantic change.
+- **N2 / N3 — substantially built (M14).** The uniform domain record +
+  delegate/budget + roll-up accounting exist and are M14-proven (§0); N1 reframed
+  the prose; N4 locked fork-bomb fail-closed. No further emulator change needed.
+- **N5 cheap-leaf (sparse node / DDR-backed DDT / on-chip hot cache) — RTL/hardware
+  representation.** This is a hardware cost-model concern, not emulator semantics
+  (the oracle already forks correctly); it belongs to the RTL layer below.
+- **EP-I RTL endpoint engine — gated.** Per §7/§8 + EP-F, not frozen into RTL
+  until the bounded-endpoint proofs land in the full M-series witness/checker/RTL
+  refinement pipeline (the Lean model EP-F is the design proof; the typed-trace
+  RTL pipeline is the remaining engineering).
+- **Scheduler model (§9) — deferred by the design.** "DEFERRED track — proof-gated…
+  not frozen in this pass"; gated on the compositional-schedulability proof
+  before any RTL. Implementing/freezing it now would violate the design's own
+  sequencing rule.
+
+Net: the unified object model is implemented across emulator (oracle),
+assembler, LLVM backend, Lean + Coq proofs, and tests. What is *not* done is
+exactly what the design marks gated (RTL freeze) or deferred (scheduler), plus
+the cosmetic POSIX-shim/alias work (libc read→recv, kill→send spelling).
