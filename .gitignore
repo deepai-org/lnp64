@@ -1,3 +1,16 @@
 /target/
 /build/
 __pycache__/
+
+# Coq build artifacts (CapSpec.v / CapImpl.v sources are tracked; outputs are not)
+*.vo
+*.vok
+*.vos
+*.glob
+proofs/coq/.*.aux
+
+# Solver/tool caches
+.lia.cache
+
+# Accidental self-referential symlink (lnp64 -> repo root)
+/lnp64
