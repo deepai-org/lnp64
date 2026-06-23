@@ -139,3 +139,22 @@ Decisive re-run is clean-build:
 The ungated software-completion lane (EP-C finite-timeout, EP-G
 SCM_RIGHTS-over-byte-fds, libc shims, F1/F2 dedup) touches emulator/compiler, not
 the RTL datapath, and proceeds regardless of the cosim outcome.
+
+## CLEAN-BUILD COSIM RESULT: RED — real RTL PC/exec-base bug (silicon #1)
+
+Decisive re-run (wiped build dir + `LNP64_RTL_REUSE_BUILD=0`): `Vlnp64_top_program_tb`
+was **freshly rebuilt from committed source** (binary mtime confirms, not reused),
+yet `top_smoke.s` still spins on UNSUPPORTED (0xff) and never reaches EXIT. So it
+is **not** a stale cache — a real RTL datapath bug.
+
+Root-cause signature (one cause): JAL at pc 0 writes link reg = **0** in RTL vs
+**0x1008** in the emulator (`FLAT_EXEC_BASE_ADDR 0x1000 + 8`); it's the real gpr
+value (final-regfile mismatch). The `flat_exec_addr` function is correct
+(`lnp64_core_tile.sv:562`) and JAL calls it (`:3245`), so the bug is downstream —
+the JAL link / regfile-commit / retire path not carrying the 0x1000 base. Entry
+point for the hunt: trace JAL at pc 0 through regfile-write + retire-commit.
+
+Gating impact: the silicon ENTRY GATE (clean-build manifest cosim green) is RED →
+**EP-I and M16 RTL refinement stay blocked** until this is fixed. The SP/schema/
+smoke edits are confirmed correct and not the cause (reproduces on clean build).
+Ungated software lane continues (EP-C finite-timeout landed).
