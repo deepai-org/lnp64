@@ -1529,3 +1529,29 @@ small refinement claim:
 
 These refinement claims are narrower than the whole architecture proof, but they
 are what make the abstract Lean model relevant to an FPGA implementation.
+
+## 35. EP-F — Bounded Memory-backed endpoint (the unified-verb freeze gate)
+
+The unified `send`/`recv`/`wait` verbs (`unified_object_model.md` §3/§10) are
+frozen into RTL only after two obligations on the Memory-backed endpoint (the
+fixed-depth queue that also *is* the "ring") are discharged. Both are proved in
+the bounded Lean model `formal/EPEndpointModel.lean`:
+
+1. **Bounded latency / fail-closed.** `send` enqueues when there is room else
+   returns `EAGAIN` (never an unbounded block); `recv` dequeues when non-empty
+   else `EAGAIN`; depth never exceeds the frozen capacity. So a full drain is
+   bounded by `capacity` `recv` steps — deterministic WCET, queue
+   non-determinism contained as a memory abstraction, not in instruction timing
+   (`ep_send_full_fails_closed`, `ep_recv_empty_fails_closed`,
+   `ep_send_preserves_bound`, `ep_recv_preserves_bound`).
+2. **Capability-safety (names-are-data).** A message names caps by index into
+   the *sender's* table; an out-of-range or revoked index resolves to nothing —
+   no message forges authority the sender lacks — and the engine installs a
+   received cap carrying authority verbatim or narrowed, never amplified
+   (`cap_no_forge_out_of_range`, `cap_no_forge_revoked`, `cap_resolve_exact`,
+   `cap_install_no_amplify`). This is the §2/§3 (non-forgeability) and §3 (no
+   amplification) spine specialised to the endpoint message path.
+
+Until these land in the M-series typed-trace/RTL pipeline (witness + checker +
+RTL engine, like M15), the endpoint engine stays emulator-only per the §8 gating
+rule.

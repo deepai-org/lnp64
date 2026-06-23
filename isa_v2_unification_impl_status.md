@@ -23,7 +23,7 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | **done** (poll + block-until-edge; timed wakeup TBD) |
 | EP-D `gate_call`/`gate_return` = the cross-domain migrating gate | emulator | **built + M2-proven** (existing 0x2f) |
 | EP-E "ring" = a **Memory-backed endpoint** — **no opcode** (refined §3); submit/reap via `send`/`recv`, poll via `wait` | emulator | **subsumed by EP-A** |
-| EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | pending |
+| EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | **done** (Lean `formal/EPEndpointModel.lean`; M-series witness/RTL pipeline TBD) |
 | EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | **done** (byte-fd + Register via write/read delegation; SCM_RIGHTS caps over byte fds TBD) |
 | EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | pending |
 | EP-I RTL endpoint/gate engine (only after EP-F) | rtl | blocked on EP-F |
@@ -70,3 +70,10 @@ compositional-schedulability + WCET proofs before any RTL.
   via the same write/read (subsumes push/pull/read_fd/write_fd/futex_wake/eventfd).
   2 unit tests (pipe round-trip, counter increment+read); 482 cargo pass; Redis
   smoke green. SCM_RIGHTS caps over byte fds still TBD.
+- EP-F: bounded Memory-backed-endpoint proofs in `formal/EPEndpointModel.lean`
+  (compiles clean under `lean`): latency/fail-closed (send/recv are single
+  bounded steps, EAGAIN on full/empty, depth ≤ capacity ⇒ drain bounded by
+  capacity = WCET) + cap-safety (handles resolve only against the sender's
+  table; out-of-range/revoked → none; install never amplifies). Recorded in
+  `formal_theorems.md` §35. The M-series witness+checker+RTL refinement pipeline
+  (like M15) is the remaining step before any RTL freeze.
