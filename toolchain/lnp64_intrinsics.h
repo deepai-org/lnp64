@@ -37,6 +37,16 @@ lnp64_word_t __lnp_gate_return(lnp64_word_t value0, lnp64_word_t value1,
 lnp64_word_t __lnp_domain_ctl(lnp64_word_t record_ptr);
 lnp64_word_t __lnp_object_ctl(lnp64_word_t record_ptr);
 
+/* Unified endpoint IPC verbs (unified_object_model.md §3). The backend lowers
+   calls to these entry points into the send/recv/wait/endpoint_create opcodes
+   (0x83/0x84/0x86/0x88). A message descriptor is { bytes_ptr, bytes_len,
+   caps_ptr, caps_len }; a waitset is { entries_ptr, count } of 24-byte
+   { handle, events, revents } entries. */
+lnp64_cap_t __lnp_endpoint_create(lnp64_word_t type_or_capacity_hint);
+lnp64_word_t __lnp_send(lnp64_cap_t endpoint_cap, lnp64_word_t msg_desc_ptr);
+lnp64_word_t __lnp_recv(lnp64_cap_t endpoint_cap, lnp64_word_t msg_desc_ptr);
+lnp64_word_t __lnp_wait(lnp64_word_t waitset_ptr, lnp64_word_t timeout);
+
 static inline lnp64_word_t __lnp_domain_create(lnp64_word_t memory,
                                                lnp64_word_t pids,
                                                lnp64_word_t fdrs,
