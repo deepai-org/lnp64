@@ -14,23 +14,25 @@ domain unification is sanctioned to implement+freeze now.
 Status: **done + validated** (see `isa_v2_change_list.md` final reconciliation).
 Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration complete.
 
-## Phase 3 — unified endpoints (`send`/`recv`/`call`/`wait` + ring)
+## Phase 3 — unified endpoints (`send`/`recv`/`gate_call`/`wait`; the "ring" is a Memory-backed endpoint, no opcode)
 
 | Item | Layer | Status |
 | --- | --- | --- |
-| EP-A endpoint object: `Endpoint` held-cap kind, `(bytes,caps)` message queue + mode | emulator | **done** |
-| EP-B `send` / `recv` verbs over endpoint handles (non-blocking; byte-fd delegation TBD) | emulator | **done** |
+| EP-A endpoint object: `Endpoint` Memory-backed held-cap kind, `(bytes,caps)` message queue | emulator | **done** |
+| EP-B `send` / `recv` verbs over endpoint handles (non-blocking; full-backing collapse = EP-G) | emulator | **done** |
 | EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | **done** (poll + block-until-edge; timed wakeup TBD) |
-| EP-D `gate_call`/`gate_return` = the `call` verb (cross-domain migrating gate) | emulator | **built + M2-proven** (existing 0x2f) |
-| EP-E async completion ring: SQE/CQE schema freeze + ring engine + `ring_enter`/wait-on-ring | emulator + schema | pending |
-| EP-F bounded-ring WCET + ring cap-safety proofs (E4 — **gate before RTL**) | formal | pending |
-| EP-G LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | pending |
-| EP-H RTL IPC/Gate engine (only after EP-F) | rtl | blocked on EP-F |
+| EP-D `gate_call`/`gate_return` = the cross-domain migrating gate | emulator | **built + M2-proven** (existing 0x2f) |
+| EP-E "ring" = a **Memory-backed endpoint** — **no opcode** (refined §3); submit/reap via `send`/`recv`, poll via `wait` | emulator | **subsumed by EP-A** |
+| EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | pending |
+| EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | pending |
+| EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | pending |
+| EP-I RTL endpoint/gate engine (only after EP-F) | rtl | blocked on EP-F |
 
-Opcode assignments (free slots `0x83-0x9f`): `send`=0x83, `recv`=0x84 (done),
-`endpoint_create`=0x88 (done), `wait`=0x86 (pending), `ring_enter`=0x87
-(pending). The `call` verb **is** the existing M2-proven `GATE_CALL` (0x2f) —
-no new opcode; `0x85` left free.
+Opcode assignments: `send`=0x83, `recv`=0x84, `wait`=0x86, `endpoint_create`=0x88
+(all **done**). The `call` verb **is** the existing M2-proven `GATE_CALL` (0x2f).
+Per refined §3 there are **no ring/SQE/async opcodes** — `0x85` and `0x87` stay
+free. An endpoint's behavior is its `Backing{Thread,Memory,Register} ×
+Producer{sw,hw}` type, fixed at create.
 
 ## Phase 2 track 1 — unified domains (process = Resource Domain)
 
@@ -57,3 +59,8 @@ compositional-schedulability + WCET proofs before any RTL.
   (timeout=0) + block-until-edge (re-poll on wake via the fd-waiter park model);
   POLLNVAL for bad handles. 4 unit tests; 480 cargo pass. (Timed wakeup on a
   finite timeout still TBD — matches AwaitDyn's current nonzero=block.)
+- EP-E **reverted** (commit e3a95e8): the refined design (§3, "freeze this
+  sentence") makes the ring a *Memory-backed endpoint* with **no ring/SQE/async
+  opcodes** — the `ring_setup`/`ring_enter` opcodes I'd added were exactly the
+  forbidden "second IPC ABI". The ring is now subsumed by the EP-A Memory-backed
+  `Endpoint` + `send`/`recv`/`wait`. 480 cargo pass after revert.

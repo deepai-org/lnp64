@@ -238,22 +238,27 @@ place the 5th operand in the `rs4` slot.
 
 ## 10. Unified endpoint IPC (Phase 3, `unified_object_model.md`)
 
-The four verbs over an endpoint held-capability + a `(bytes, caps)` message.
-Operands are GPRs holding handle/pointer **values** (post-FDR→GPR migration).
-Landing incrementally oracle-first; **not frozen into RTL** until the
-bounded-ring WCET + ring-cap-safety proofs (E4) pass.
+The four verbs `send`/`recv`/`gate_call`/`wait` operate **only** on endpoints + a
+`(bytes, caps)` message. Operands are GPRs holding handle/pointer **values**
+(post-FDR→GPR migration). An endpoint's behavior is its **type** —
+`Backing {Thread, Memory, Register} × Producer {software, hardware}` — fixed at
+create time, **not** a per-op flag. **There are no ring/SQE/async opcodes:** an
+io_uring-style ring is a *Memory-backed endpoint* you `send`/`recv`/`wait` on, so a
+verb is never encoded twice (the endpoint *type* selects buffered-vs-rendezvous).
+Landing oracle-first; **not frozen into RTL** until the bounded Memory-backed-endpoint
+latency + cap-safety proofs (E4) pass.
 
 | Op | Mnemonic | Form | Semantics | Status |
 | --- | --- | --- | --- | --- |
-| 0x83 | `send` | `rd, rs1(ep), rs2(msgdesc)` | enqueue one `(bytes,caps)` message; rd=bytes or -errno | **emulator** |
-| 0x84 | `recv` | `rd, rs1(ep), rs2(msgdesc)` | dequeue one message; install caps; rd=bytes or -errno (EAGAIN if empty) | **emulator** |
-| 0x88 | `endpoint_create` | `rd, rs1(hint)` | mint an endpoint cap; rd=handle | **emulator** |
-| 0x2f | `gate_call` | (existing) | the `call` verb — cross-domain migrating gate, 3 modes | **built + M2-proven** |
+| 0x83 | `send` | `rd, rs1(ep), rs2(msgdesc)` | rendezvous w/ ep backing — Thread→block-till-consumer, Memory→enqueue&return (EAGAIN if full), Register→update; rd=bytes or -errno | **emulator** |
+| 0x84 | `recv` | `rd, rs1(ep), rs2(msgdesc)` | take one message; install caps; rd=bytes or -errno (EAGAIN if empty) | **emulator** |
+| 0x88 | `endpoint_create` | `rd, rs1(type/hint)` | mint an endpoint cap of a `Backing×Producer` type; rd=handle | **emulator** |
 | 0x86 | `wait` | `rd, rs1(waitset), rs2(timeout)` | poll/block until an edge in the set fires; rd=#ready | **emulator** |
-| 0x87 | `ring_enter` | `rd, rs1(ring), rs2(submit/min/timeout block)` | submit SQEs + reap CQEs | reserved |
+| 0x2f | `gate_call` | (existing) | the `call` verb — Thread-backed rendezvous (migrating gate); completion = `send` to a Continuation Endpoint | **built + M2-proven** |
 
-The `call` verb is the existing `GATE_CALL` (`call_cap`) at 0x2f — no new opcode;
-`0x85` stays free.
+The `call` verb is the existing `GATE_CALL` (`call_cap`) at 0x2f — no new opcode.
+`0x85` and `0x87` stay **free**: the ring needs no instruction (it is a Memory-backed
+endpoint; the formerly-reserved `ring_enter` is **dropped**).
 
 **Message descriptor** (frozen, in guest memory): `[0]=bytes_ptr`,
 `[8]=bytes_len` (send in; recv buffer-cap in / actual out), `[16]=caps_ptr`
@@ -272,6 +277,7 @@ actual out). Caps in a message are cap-table handles resolved against the
   `lock.cmpxchg`(0xc9).
 
 Free opcode slots after migration: 0x0a-0x0f, 0x1f, 0x29, 0x2a, 0x3d-0x46,
-0x85, 0x89-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff. (0x83/0x84/0x86/0x87/0x88
-reserved for the unified-endpoint verbs, §10; the `call` verb reuses the
-existing gate at 0x2f.)
+0x85, 0x87, 0x89-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff. (0x83/0x84/0x86/0x88
+reserved for the unified-endpoint verbs `send`/`recv`/`wait`/`endpoint_create`, §10;
+the `call` verb reuses the existing gate at 0x2f; no ring opcode — the ring is a
+Memory-backed endpoint.)
