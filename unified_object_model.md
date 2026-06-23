@@ -120,6 +120,9 @@ baked into instruction timing.
   Three modes (§6). **Distinct from intra-domain `JAL`/`JALR` (`CALL`/`RET`)** — those are
   ordinary same-context control transfer, single-cycle, untouched. Keep the verb spelled
   `gate_call`, never bare `call`, to avoid colliding with the `CALL sym = JAL r1` pseudo.
+  *(Phase 4 — [`unified_call_model.md`](unified_call_model.md) — erases even this boundary:
+  a function call becomes `call` to a same-context endpoint, `gate_call` its cross-context
+  case, both on one protected continuation stack. Future, not frozen; fewer instructions.)*
 - **`wait(waitset, timeout) -> ready`** — block until any edge in the set fires. Collapses
   `await`(+`_dyn`)/`await_ex`(+`_dyn`)/`waitable_probe`(+`_dyn`)/`futex_wait`/`thread_join`/
   `wait_pid`/`sleep`/`alarm`. Readiness mask = POSIX `revents` (already true:

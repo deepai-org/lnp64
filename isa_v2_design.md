@@ -419,6 +419,14 @@ yet**; each is gated on its own proofs (see the companion docs' work items).
   completion = a `send` to a Continuation Endpoint). The `call` verb **is** Phase-2 track
   3's migrating gate, so Phases
   2 and 3 converge on one mechanism rather than adding two.
+- **Phase 4 — unified call model
+  ([`unified_call_model.md`](unified_call_model.md)).** Erase the last special case: a
+  function call becomes `call` to a *same-context* endpoint, `gate_call` its cross-context
+  case, both on one protected continuation stack that subsumes call/shadow/exception/gate/
+  signal/coroutine stacks. Yields **fewer instructions** (return address leaves the GPR
+  file; the `r1` link reg is reclaimed; ra spill/restore vanishes) + ROP immunity on every
+  return. **Future intended design, NOT frozen** — gated on continuation-stack integrity +
+  WCET + register-window-non-leak proofs. Well past current freeze scope.
 
 ### Forward-consistency reconciliation (what Phase 1 must not freeze shut)
 
