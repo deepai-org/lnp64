@@ -164,17 +164,27 @@ Fixed + committed (8b7086a), 11→26→30 green:
    8-byte words → blocked-and-resumed instr (JOIN/FUTEX_WAIT) re-armed misaligned.
    Rewind 8. Fixes `top_futex_wake`, `top_fork_child_exit`.
 
-Remaining 5 RED (each a distinct emulator↔RTL-synthetic semantic reconciliation,
-several needing a which-side-is-correct call):
-- `top_waitable_probe` + `top_await_ex` (same sig `[(2,8,0)]`): OBJECT_CTL creates
-  the event counter "ready" (value 1) in RTL but value 0 in the emulator, so
-  READ_FD drains 8 bytes (RTL) vs 0 (emulator). Likely one emulator-init fix.
-- `top_signal_self`: exit 1 (RTL) vs 0 (emulator) — signal-delivery exit semantics.
-- `top_pipe_static_push_pull`: exit 0 (RTL) vs 1 (emulator) — static-pipe semantics
-  (dynamic `top_pipe_push_pull` passes).
-- `top_exec_target`: file-based EXEC (`demos/exec_target.s`, WRITE_FD fd1) vs the
-  RTL's baked synthetic exec target. Needs a design decision on how the RTL
-  hardware models file-exec + exec'd-process stdout/fd inheritance.
+Final 5 RED — all resolved (commit 3c0a1f5), oracle-first:
+- `top_waitable_probe` / `top_await_ex` / `top_pipe_static_push_pull`: static `fdN`
+  ops resolve the handle from the named GPR (v2 "caps are GPR handles", as the
+  passing `*_DYN` programs do); the static fixtures never loaded the handle reg.
+  Load `LI rN, N` before each static fd op (the dynamic idiom).
+- `top_signal_self`: RTL SIGACTION clobbered gpr[2] (== signum reg) → KILL saw
+  signum 0 → EINVAL. SIGACTION writes no result GPR; KILL saves r2=0 (its success
+  result) in the signal frame while live r2 carries the signum to the handler.
+- `top_exec_target`: Option A — committed-exec EXEC of the canonical demo path
+  resolves to a fixed baked image (`COSIM_EXEC_TARGET_SOURCE`), RTL bakes the
+  byte-identical program; file read elided in cosim, real file-EXEC untouched.
+- Latent RTL `enc_slots` padding bug (31→36 bits) surfaced by the EXEC bake.
 
-Gating impact: silicon ENTRY GATE (clean-build manifest cosim green) is **partially
-green (30/35)** → EP-I and M16 RTL refinement remain blocked on the last 5.
+## SILICON-ENTRY GATE: GREEN (flat per-program manifest 35/35 byte-exact)
+
+Clean-build (`LNP64_RTL_REUSE_BUILD=0`) `flat_hex_programs` manifest is **35/35
+byte-exact RTL↔emulator green** (driver rc=0); 488 cargo tests pass. The
+`llvm_mc` / `llvm_clang` / `llvm_linked` manifest sections remain gated on the
+LNP64 LLVM toolchain (not built in this environment) — independent of the flat
+cosim and not part of this gate.
+
+**Unblocked:** M16 endpoint typed-trace (M15 recipe) → EP-I RTL endpoint engine.
+Recommend running the full M-series RTL gate (docker) before further RTL freeze
+to confirm the `enc_slots`/SIGACTION/KILL edits regress nothing M1–M15.
