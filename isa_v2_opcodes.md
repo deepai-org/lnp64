@@ -248,9 +248,12 @@ bounded-ring WCET + ring-cap-safety proofs (E4) pass.
 | 0x83 | `send` | `rd, rs1(ep), rs2(msgdesc)` | enqueue one `(bytes,caps)` message; rd=bytes or -errno | **emulator** |
 | 0x84 | `recv` | `rd, rs1(ep), rs2(msgdesc)` | dequeue one message; install caps; rd=bytes or -errno (EAGAIN if empty) | **emulator** |
 | 0x88 | `endpoint_create` | `rd, rs1(hint)` | mint an endpoint cap; rd=handle | **emulator** |
-| 0x85 | `call` | `rd, rs1(ep), rs2(msgdesc)` | fused send + wait-for-reply (one-shot reply ep) | reserved |
+| 0x2f | `gate_call` | (existing) | the `call` verb — cross-domain migrating gate, 3 modes | **built + M2-proven** |
 | 0x86 | `wait` | `rd, rs1(waitset), rs2(timeout)` | block until an edge in the set fires | reserved |
 | 0x87 | `ring_enter` | `rd, rs1(ring), rs2(submit/min/timeout block)` | submit SQEs + reap CQEs | reserved |
+
+The `call` verb is the existing `GATE_CALL` (`call_cap`) at 0x2f — no new opcode;
+`0x85` stays free.
 
 **Message descriptor** (frozen, in guest memory): `[0]=bytes_ptr`,
 `[8]=bytes_len` (send in; recv buffer-cap in / actual out), `[16]=caps_ptr`
@@ -269,5 +272,6 @@ actual out). Caps in a message are cap-table handles resolved against the
   `lock.cmpxchg`(0xc9).
 
 Free opcode slots after migration: 0x0a-0x0f, 0x1f, 0x29, 0x2a, 0x3d-0x46,
-0x89-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff. (0x83-0x88 reserved for the
-unified-endpoint verbs, §10.)
+0x85, 0x89-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff. (0x83/0x84/0x86/0x87/0x88
+reserved for the unified-endpoint verbs, §10; the `call` verb reuses the
+existing gate at 0x2f.)

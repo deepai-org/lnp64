@@ -406,6 +406,7 @@ enum FdHandle {
     },
     PipeReader(Rc<RefCell<PipeBuffer>>),
     PipeWriter(Rc<RefCell<PipeBuffer>>),
+    Endpoint(Rc<RefCell<EndpointState>>),
     Counter(Rc<RefCell<u64>>),
     EventCounter {
         value: Rc<RefCell<u64>>,
@@ -463,6 +464,7 @@ impl FdHandle {
             }),
             FdHandle::PipeReader(buffer) => Ok(FdHandle::PipeReader(Rc::clone(buffer))),
             FdHandle::PipeWriter(buffer) => Ok(FdHandle::PipeWriter(Rc::clone(buffer))),
+            FdHandle::Endpoint(state) => Ok(FdHandle::Endpoint(Rc::clone(state))),
             FdHandle::Counter(value) => Ok(FdHandle::Counter(Rc::clone(value))),
             FdHandle::EventCounter { value, semaphore } => Ok(FdHandle::EventCounter {
                 value: Rc::clone(value),
@@ -583,6 +585,36 @@ struct PipeBuffer {
     bytes: VecDeque<u8>,
     capabilities: VecDeque<CapabilityPayload>,
 }
+
+/// Unified endpoint IPC (Phase 3, `unified_object_model.md`). An endpoint is a
+/// held capability carrying a queue of `(bytes, caps)` messages — the single
+/// object the four verbs `send`/`recv`/`call`/`wait` operate over. Unlike a pipe
+/// (a byte *stream*), an endpoint preserves message framing: one `send` = one
+/// message, one `recv` = one message.
+#[derive(Default)]
+struct EndpointState {
+    messages: VecDeque<EndpointMessage>,
+    /// Max queued messages before `send` blocks/returns EAGAIN (0 = default).
+    capacity: usize,
+}
+
+#[derive(Default)]
+struct EndpointMessage {
+    bytes: Vec<u8>,
+    caps: Vec<CapabilityPayload>,
+}
+
+/// Frozen IPC message-descriptor layout (bytes); see `unified_object_model.md`.
+/// `send` reads the in-fields; `recv` reads buffer fields in and writes the
+/// actual transferred counts back. Forward-compatible with the ring SQE/CQE.
+const MSG_DESC_BYTES_PTR: u64 = 0; // u64: payload / receive-buffer address
+const MSG_DESC_BYTES_LEN: u64 = 8; // u64: send len; recv buffer cap in / actual out
+const MSG_DESC_CAPS_PTR: u64 = 16; // u64: array of u64 cap handles
+const MSG_DESC_CAPS_LEN: u64 = 24; // u64: send #caps; recv buffer cap in / actual out
+/// Max caps in a single endpoint message (bounds WCET of one transfer).
+const MSG_MAX_CAPS: u64 = 16;
+/// Default endpoint queue depth when the create hint is 0.
+const ENDPOINT_DEFAULT_CAPACITY: usize = 64;
 
 impl PipeBuffer {
     fn can_push_bytes(&self, len: usize) -> bool {
@@ -2128,6 +2160,10 @@ impl Machine {
             0x80 => Instr::Inb(a, b),
             0x81 => Instr::Outb(a, b),
             0x82 => Instr::LoadUcode(a, b),
+            // Unified endpoint IPC verbs (Phase 3).
+            0x83 => Instr::Send(a, b, c),
+            0x84 => Instr::Recv(a, b, c),
+            0x88 => Instr::EndpointCreate(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -4255,6 +4291,20 @@ impl Machine {
             Instr::DmaCtl(result, argblock) => {
                 self.dma_ctl(result, self.read_reg(argblock)?)?;
             }
+            Instr::EndpointCreate(result, hint) => {
+                let hint = self.read_reg(hint)?;
+                self.endpoint_create(result, hint)?;
+            }
+            Instr::Send(result, ep, desc) => {
+                let ep_value = self.read_reg(ep)?;
+                let desc = self.read_reg(desc)?;
+                self.ep_send(result, ep_value, desc)?;
+            }
+            Instr::Recv(result, ep, desc) => {
+                let ep_value = self.read_reg(ep)?;
+                let desc = self.read_reg(desc)?;
+                self.ep_recv(result, ep_value, desc)?;
+            }
             Instr::CapSend(result, argblock) => {
                 self.cap_send(result, self.read_reg(argblock)?)?;
             }
@@ -5714,6 +5764,7 @@ impl Machine {
             FdHandle::TcpStream(stream) => stream.write_all(&data),
             FdHandle::Stdin
             | FdHandle::MessageEndpoint
+            | FdHandle::Endpoint(_)
             | FdHandle::Dir { .. }
             | FdHandle::PipeReader(_)
             | FdHandle::MemoryObject { .. }
@@ -6202,6 +6253,7 @@ impl Machine {
             FdHandle::Stdout
             | FdHandle::Stderr
             | FdHandle::MessageEndpoint
+            | FdHandle::Endpoint(_)
             | FdHandle::Dir { .. }
             | FdHandle::PipeWriter(_)
             | FdHandle::TcpSocket { .. }
@@ -6367,6 +6419,175 @@ impl Machine {
             return Err(14);
         }
         Ok(())
+    }
+
+    // ---- Unified endpoint IPC (Phase 3, unified_object_model.md) ----------
+    //
+    // `endpoint_create` mints an Endpoint held-capability; `send`/`recv` move one
+    // `(bytes, caps)` message over it. Capability handles in a message are
+    // resolved against the *sender's* cap table (names-are-data) and installed
+    // into the *receiver's* cap table by the engine on recv — never raw authority.
+    // This slice covers Endpoint handles only and is non-blocking (recv on an
+    // empty endpoint returns EAGAIN); blocking is the job of the `wait` verb.
+
+    fn endpoint_create(&mut self, result: Reg, hint: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
+        let capacity = if hint == 0 {
+            ENDPOINT_DEFAULT_CAPACITY
+        } else {
+            (hint as usize).min(4096)
+        };
+        if self.ensure_domain_budget_errno(0, 0, 0, 1).is_err() {
+            self.complete_reg_err(result, 12)?;
+            return Ok(());
+        }
+        let state = Rc::new(RefCell::new(EndpointState {
+            messages: VecDeque::new(),
+            capacity,
+        }));
+        match self.alloc_fd_handle(FdHandle::Endpoint(state))? {
+            Some(fd) => {
+                let token = self.fd_token(fd)?;
+                self.set_errno(0)?;
+                self.complete_reg_ok(result, token)?;
+            }
+            None => self.complete_reg_err(result, 24)?,
+        }
+        Ok(())
+    }
+
+    fn endpoint_state(&self, fd: usize) -> Result<Rc<RefCell<EndpointState>>, u64> {
+        match self.process().map_err(|_| 3u64)?.fds.get(fd) {
+            Some(FdHandle::Endpoint(state)) => Ok(Rc::clone(state)),
+            Some(_) => Err(95), // ENOTSUP — non-endpoint fd (byte-fd delegation TBD)
+            None => Err(9),
+        }
+    }
+
+    fn ep_send(&mut self, result: Reg, ep_value: u64, desc: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
+        match self.ep_send_inner(ep_value, desc) {
+            Ok(count) => self.complete_reg_ok(result, count)?,
+            Err(errno) => self.complete_reg_err(result, errno)?,
+        }
+        Ok(())
+    }
+
+    fn ep_send_inner(&mut self, ep_value: u64, desc: u64) -> Result<u64, u64> {
+        let fd = self.decode_fd_value(ep_value)?;
+        let state = self.endpoint_state(fd)?;
+        self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+        let bytes_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR).map_err(|_| 14u64)?;
+        let bytes_len = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN).map_err(|_| 14u64)?;
+        let caps_ptr = self.load_u64_offset(desc, MSG_DESC_CAPS_PTR).map_err(|_| 14u64)?;
+        let caps_len = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN).map_err(|_| 14u64)?;
+        if caps_len > MSG_MAX_CAPS {
+            return Err(22);
+        }
+        if state.borrow().messages.len() >= state.borrow().capacity {
+            return Err(11); // EAGAIN — endpoint queue full
+        }
+        let bytes = if bytes_len == 0 {
+            Vec::new()
+        } else {
+            self.read_bytes(bytes_ptr, bytes_len as usize)
+                .map_err(|_| 14u64)?
+        };
+        // Resolve every cap handle against the *sender's* table (names-are-data).
+        let mut caps = Vec::with_capacity(caps_len as usize);
+        for i in 0..caps_len {
+            let handle_value = self
+                .load_u64_offset(caps_ptr, i.checked_mul(8).ok_or(22u64)?)
+                .map_err(|_| 14u64)?;
+            let src = self.decode_fd_value(handle_value)?;
+            self.fd_right_errno(src, CAP_RIGHT_TRANSFER)?;
+            let process = self.process().map_err(|_| 3u64)?;
+            let handle = process
+                .fds
+                .get(src)
+                .ok_or(9u64)?
+                .clone_handle()
+                .map_err(|_| 9u64)?;
+            let capability = process.fd_capabilities.get(src).copied().ok_or(9u64)?;
+            if capability.revoked {
+                return Err(116);
+            }
+            caps.push(CapabilityPayload { handle, capability });
+        }
+        state.borrow_mut().messages.push_back(EndpointMessage { bytes, caps });
+        self.poll_fd_waiters();
+        Ok(bytes_len)
+    }
+
+    fn ep_recv(&mut self, result: Reg, ep_value: u64, desc: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
+        match self.ep_recv_inner(ep_value, desc) {
+            Ok(count) => self.complete_reg_ok(result, count)?,
+            Err(errno) => self.complete_reg_err(result, errno)?,
+        }
+        Ok(())
+    }
+
+    fn ep_recv_inner(&mut self, ep_value: u64, desc: u64) -> Result<u64, u64> {
+        let fd = self.decode_fd_value(ep_value)?;
+        let state = self.endpoint_state(fd)?;
+        self.fd_right_errno(fd, CAP_RIGHT_READ)?;
+        let buf_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR).map_err(|_| 14u64)?;
+        let buf_cap = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN).map_err(|_| 14u64)?;
+        let caps_ptr = self.load_u64_offset(desc, MSG_DESC_CAPS_PTR).map_err(|_| 14u64)?;
+        let caps_cap = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN).map_err(|_| 14u64)?;
+        // Peek: a message must fit the caller's buffers, else fail without consuming.
+        let (msg_bytes_len, msg_caps_len) = {
+            let st = state.borrow();
+            let Some(msg) = st.messages.front() else {
+                return Err(11); // EAGAIN — empty (use `wait` to block)
+            };
+            (msg.bytes.len() as u64, msg.caps.len() as u64)
+        };
+        if msg_bytes_len > buf_cap || msg_caps_len > caps_cap {
+            return Err(90); // EMSGSIZE — buffer too small; message left queued
+        }
+        // Reserve fd slots for the caps up front so install can't half-fail.
+        self.ensure_domain_budget_errno(0, 0, 0, msg_caps_len)?;
+        let msg = state.borrow_mut().messages.pop_front().ok_or(11u64)?;
+        if !msg.bytes.is_empty() {
+            self.write_bytes(buf_ptr, &msg.bytes).map_err(|_| 14u64)?;
+        }
+        for (i, payload) in msg.caps.into_iter().enumerate() {
+            let token = self.install_received_cap(payload)?;
+            self.store_u64_offset(caps_ptr, (i as u64).checked_mul(8).ok_or(22u64)?, token)
+                .map_err(|_| 14u64)?;
+        }
+        // Write back actual transferred counts.
+        self.store_u64_offset(desc, MSG_DESC_BYTES_LEN, msg_bytes_len)
+            .map_err(|_| 14u64)?;
+        self.store_u64_offset(desc, MSG_DESC_CAPS_LEN, msg_caps_len)
+            .map_err(|_| 14u64)?;
+        self.poll_fd_waiters();
+        Ok(msg_bytes_len)
+    }
+
+    /// Install a received capability payload into the first free fd slot and
+    /// return its handle token. Mirrors the cap_recv install path.
+    fn install_received_cap(&mut self, payload: CapabilityPayload) -> Result<u64, u64> {
+        let dst = {
+            let process = self.process().map_err(|_| 3u64)?;
+            process
+                .fds
+                .iter()
+                .enumerate()
+                .find(|(idx, candidate)| {
+                    *idx != MESSAGE_ENDPOINT_FD && matches!(candidate, FdHandle::Closed)
+                })
+                .map(|(idx, _)| idx)
+                .ok_or(24u64)?
+        };
+        self.release_fd_locks_for_replacement(dst).map_err(|_| 9u64)?;
+        self.install_fd_capability(dst, payload.capability)
+            .map_err(|_| 9u64)?;
+        self.bump_fd_generation(dst).map_err(|_| 9u64)?;
+        self.process_mut().map_err(|_| 3u64)?.fds[dst] = payload.handle;
+        self.fd_token(dst).map_err(|_| 9u64)
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
@@ -10072,6 +10293,7 @@ impl Machine {
                 let buffer = buffer.borrow();
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
             }
+            FdHandle::Endpoint(state) => Ok(!state.borrow().messages.is_empty()),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
                     return Ok(true);
@@ -10158,6 +10380,7 @@ impl Machine {
                 let buffer = buffer.borrow();
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
             }
+            FdHandle::Endpoint(state) => Ok(!state.borrow().messages.is_empty()),
             FdHandle::DmaBuffer { .. } | FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
@@ -11593,6 +11816,105 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[30], 20);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.process().unwrap().inbox.is_empty());
+    }
+
+    // ---- Unified endpoint IPC (Phase 3) -----------------------------------
+
+    fn write_msg_desc(machine: &mut Machine, desc: u64, bytes_ptr: u64, bytes_len: u64, caps_ptr: u64, caps_len: u64) {
+        machine.store_u64(desc + MSG_DESC_BYTES_PTR, bytes_ptr).unwrap();
+        machine.store_u64(desc + MSG_DESC_BYTES_LEN, bytes_len).unwrap();
+        machine.store_u64(desc + MSG_DESC_CAPS_PTR, caps_ptr).unwrap();
+        machine.store_u64(desc + MSG_DESC_CAPS_LEN, caps_len).unwrap();
+    }
+
+    #[test]
+    fn endpoint_send_recv_roundtrips_bytes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        assert_ne!(token, -1i64 as u64);
+        assert!(matches!(
+            machine.process().unwrap().fds[machine.decode_fd_value(token).unwrap()],
+            FdHandle::Endpoint(_)
+        ));
+
+        let send_desc = ARG_BASE + 0x100;
+        let payload = ARG_BASE + 0x200;
+        machine.write_bytes(payload, b"hello").unwrap();
+        write_msg_desc(&mut machine, send_desc, payload, 5, 0, 0);
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 5);
+
+        let recv_desc = ARG_BASE + 0x300;
+        let recv_buf = ARG_BASE + 0x400;
+        write_msg_desc(&mut machine, recv_desc, recv_buf, 64, 0, 0);
+        machine.thread_mut().unwrap().regs[6] = recv_desc;
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 5);
+        assert_eq!(machine.read_bytes(recv_buf, 5).unwrap(), b"hello".to_vec());
+        assert_eq!(machine.load_u64(recv_desc + MSG_DESC_BYTES_LEN).unwrap(), 5);
+        // FIFO emptied: a second recv reports EAGAIN.
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+    }
+
+    #[test]
+    fn endpoint_recv_rejects_undersized_buffer_without_consuming() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+
+        let send_desc = ARG_BASE + 0x100;
+        let payload = ARG_BASE + 0x200;
+        machine.write_bytes(payload, b"abcdef").unwrap();
+        write_msg_desc(&mut machine, send_desc, payload, 6, 0, 0);
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 6);
+
+        let recv_desc = ARG_BASE + 0x300;
+        write_msg_desc(&mut machine, recv_desc, ARG_BASE + 0x400, 4, 0, 0);
+        machine.thread_mut().unwrap().regs[6] = recv_desc;
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 90); // EMSGSIZE
+        // Message must still be queued — a large-enough recv now succeeds.
+        write_msg_desc(&mut machine, recv_desc, ARG_BASE + 0x400, 16, 0, 0);
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 6);
+        assert_eq!(machine.read_bytes(ARG_BASE + 0x400, 6).unwrap(), b"abcdef".to_vec());
+    }
+
+    #[test]
+    fn endpoint_send_recv_transfers_capability() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (reader_token, _writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+
+        let send_desc = ARG_BASE + 0x100;
+        let caps_arr = ARG_BASE + 0x500;
+        machine.store_u64(caps_arr, reader_token).unwrap();
+        write_msg_desc(&mut machine, send_desc, 0, 0, caps_arr, 1);
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 0);
+        // Copy semantics: the original reader fd is untouched.
+        assert!(matches!(machine.process().unwrap().fds[3], FdHandle::PipeReader(_)));
+
+        let recv_desc = ARG_BASE + 0x300;
+        let recv_caps = ARG_BASE + 0x600;
+        write_msg_desc(&mut machine, recv_desc, ARG_BASE + 0x700, 16, recv_caps, 4);
+        machine.thread_mut().unwrap().regs[6] = recv_desc;
+        machine.exec(Instr::Recv(Reg(5), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.load_u64(recv_desc + MSG_DESC_CAPS_LEN).unwrap(), 1);
+        let installed = machine.load_u64(recv_caps).unwrap();
+        let fd = machine.decode_fd_value(installed).unwrap();
+        assert!(matches!(machine.process().unwrap().fds[fd], FdHandle::PipeReader(_)));
     }
 
     #[test]

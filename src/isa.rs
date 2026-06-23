@@ -251,6 +251,14 @@ pub enum Instr {
     FMul(FReg, FReg, FReg),
     FDiv(FReg, FReg, FReg),
     VAdd32(VReg, VReg, VReg),
+    // Unified endpoint IPC (Phase 3, unified_object_model.md). Operands are GPRs
+    // holding values (handles/pointers), per the FDR->GPR migration.
+    // EndpointCreate rd, rs1(mode/capacity hint) -> rd = endpoint handle token.
+    EndpointCreate(Reg, Reg),
+    // Send rd, rs1(ep handle), rs2(msg-descriptor ptr) -> rd = bytes sent or -errno.
+    Send(Reg, Reg, Reg),
+    // Recv rd, rs1(ep handle), rs2(msg-descriptor ptr) -> rd = bytes received or -errno.
+    Recv(Reg, Reg, Reg),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
