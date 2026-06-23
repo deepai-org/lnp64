@@ -23,10 +23,10 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | **done** (poll + block-until-edge; timed wakeup TBD) |
 | EP-D `gate_call`/`gate_return` = the cross-domain migrating gate | emulator | **built + M2-proven** (existing 0x2f) |
 | EP-E "ring" = a **Memory-backed endpoint** — **no opcode** (refined §3); submit/reap via `send`/`recv`, poll via `wait` | emulator | **subsumed by EP-A** |
-| EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | **done** (Lean `formal/EPEndpointModel.lean`; M-series witness/RTL pipeline TBD) |
+| EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | **done + promoted to M16** (Lean `formal/EPEndpointModel.lean` → full M16 witness/refinement pipeline: schema→pkg→RTL→checker→witness→Lean, all green) |
 | EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | **done** (byte-fd + Register via write/read delegation; SCM_RIGHTS caps over byte fds TBD) |
 | EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | **backend done** (`.td` SEND/RECV/WAIT/ENDPOINT_CREATE + SDNodes + `LowerCall` shims for `__lnp_send/recv/wait/endpoint_create`); libc shim rewrites TBD; validating in docker |
-| EP-I RTL endpoint/gate engine (only after EP-F) | rtl | blocked on EP-F |
+| EP-I RTL endpoint/gate engine (only after EP-F) | rtl | **sanctioned to freeze** (M16 witness+Lean green; full M1–M16 gate green) |
 
 Opcode assignments: `send`=0x83, `recv`=0x84, `wait`=0x86, `endpoint_create`=0x88
 (all **done**). The `call` verb **is** the existing M2-proven `GATE_CALL` (0x2f).
@@ -208,3 +208,30 @@ S0 still expects legacy `LNP64_OP_LI32` (+ a stale `lnp64_decode_t` shape) that
 the ISA-v2 decode migration (9fca938) removed. Needs an ISA-contract decision;
 independent of M16. The M1–M15 *witness/refinement* gates (Step 0's scope) are
 all green.
+
+## M16 endpoint typed-trace engine — COMPLETE; EP-I sanctioned to freeze
+
+EP-F promoted from a standalone Lean file to the full M-series pipeline (M15
+recipe), all green:
+- **schema** (`lnp64_m16_endpoint_commit_t` / `lnp64_m16_state_projection_t`,
+  `lnp64_m16_endpoint_op_e` / `lnp64_m16_backing_e`, `EMSGSIZE=90`); pkg+schema
+  in lockstep (`check_rtl_shared_schema` green).
+- **RTL** `rtl/engines/lnp64_m16_endpoint.sv` (+ assertions, tb, filelist):
+  queue engine walking create/send/recv/full/empty/oversize/cap-send/cap-reject/
+  notify, emitting a typed commit + invariant projection per op
+  (`LNP64-RTL-M16 PASS`).
+- **checker** `check_rtl_m16_typed_commit_trace.py` (+ offline `check_rtl_m16_witness.py`,
+  self-tests) validating the four EP-F invariant classes; emits
+  `lnp64_m16_endpoint_refinement_witness_v1` (13 records).
+- **witness gate** `run_rtl_m16_witness_gate.sh` + seeded RTL↔model cosim
+  (`formal/m16_endpoint_model.py`).
+- **Lean** `formal/M16EndpointModel.lean` (promotes EP-F: generic
+  bounded/fail-closed/cap-safety/framing theorems + packed-decode machinery) and
+  `run_rtl_m16_lean_witness_gate.sh` (kernel-`decide` decode faithfulness).
+  `#print axioms` = propext/Quot.sound only (no sorry/admit/custom axiom).
+
+Acceptance met: M16 witness + Lean green; full **M1–M16** RTL witness/refinement
+gates green; cargo green; Redis unaffected (no Rust change). → **EP-I (RTL
+endpoint engine) is sanctioned to freeze.** Note: `EPEndpointModel.lean` is kept
+as the EP-F design proof; `M16EndpointModel.lean` is its witness/refinement
+promotion (same theorems, M16 namespace + packed-bit layout).
