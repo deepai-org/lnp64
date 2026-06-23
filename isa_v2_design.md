@@ -1,7 +1,8 @@
 # LNP64 ISA v2 — Design Specification
 
-Status: **proposed / locked for review**. This document is the single source of
-truth for the v2 instruction set. Every other layer — reference emulator
+Status: **v2 core largely implemented** (emulator + LLVM backend land the §0–§6
+encoding; RTL/Coq in progress), **locked for review**. This document is the single
+source of truth for the v2 instruction set. Every other layer — reference emulator
 (`src/emulator.rs`), LLVM backend (`llvm/lib/Target/LNP64`), RTL (`rtl/`), Koika
 mediation core, and the Coq/Kami proofs — derives from it. Where any layer
 disagrees with this document, this document wins; the layer is the bug.
@@ -10,6 +11,22 @@ v2 is a deliberate, one-batch break from v1. v1 is not yet frozen by released
 software, and Phase 1 formal proofs have not started, so we pay the migration
 cost once, now, and let Phase 1 prove against v2 instead of throwing v1 proofs
 away.
+
+**Scope of this document.** It specifies the v2 instruction set (§0–§7) *and* serves
+as the umbrella roadmap (§8) for the two architectural unification projects layered
+on top of it:
+
+- [`unified_domain_refactor.md`](unified_domain_refactor.md) — process = Resource
+  Domain (one uniform node; address space and endpoints as held capabilities;
+  fork/exec/clone as capability-sharing; names-are-data), plus the deferred
+  realtime-scheduler and migrating-IPC tracks.
+- [`unified_endpoint_ipc.md`](unified_endpoint_ipc.md) — one endpoint object, one
+  `(bytes, caps)` message, four verbs (`send`/`recv`/`call`/`wait`) and a frozen
+  async completion-ring; collapses the ~20 IPC/async opcodes.
+
+Both are **future intended design, not frozen yet** (each carries its own
+proof-before-freeze gate). §8 reconciles the v2 core with them — so nothing frozen now
+blocks them — and lays out the implementation phases.
 
 ## 0. The width decision: fixed 64-bit instructions
 
@@ -268,6 +285,15 @@ natively in one word, removing the v1 trailing-word hack. Interactions:
   mutation stays in the `CAP_*` instructions (not atomic-RMW; no reservation).
 - **Code/rodata fetch+read authorization** is not an FDR slot either — it uses
   the per-region `R/W/X` permission model, see §4.5.
+- **Forward consistency (Phase 3, not frozen).** The FDR-as-separate-file model is
+  *transitional*. The in-flight "capabilities are GPR handles" migration and
+  [`unified_endpoint_ipc.md`](unified_endpoint_ipc.md) collapse `PULL`/`PUSH`/
+  `CAP_SEND`/`CAP_RECV`/`GATE_CALL` into `send`/`recv`/`call`/`wait` over **endpoint
+  handles** in one GPR handle namespace, and
+  [`unified_domain_refactor.md`](unified_domain_refactor.md) makes the address space
+  and endpoints **held capabilities of a Resource Domain**. v2 keeps FDR *semantics*
+  now, but RTL should model the 256 slots as a **cached view of held endpoint
+  capabilities**, not an independent register file that Phase 3 must rip out. See §8.
 
 ### 4.3 PCR — process / control registers
 
@@ -333,10 +359,13 @@ tables and emits the Coq `decode` definition, so compiler and hardware proof
 speak about identical bit patterns. One-major-opcode-per-instruction makes that
 Coq decoder a single flat pattern match.
 
-## 7. Migration batch — execution order
+## 7. Migration batch — execution order (Phase 1: the v2 core)
 
-One coherent batch, layered so each layer validates against the one before it
-(the emulator is the reference oracle):
+This is **Phase 1** of the roadmap in §8 — the v2 instruction set itself. Steps 1–4
+(spec, emulator oracle, LLVM backend, psABI/crt0) are **largely landed** (Redis runs
+on the v2 emulator, see `redis_isa_v2_status.md`); steps 5–8 (conformance, RTL/Koika,
+Coq/Kami, docs) are in progress. One coherent batch, layered so each layer validates
+against the one before it (the emulator is the reference oracle):
 
 1. **This spec** — locked (review gate here).
 2. **Reference emulator** (`src/emulator.rs`) — new 64-bit decode/execute;
@@ -363,3 +392,54 @@ One coherent batch, layered so each layer validates against the one before it
 Gating rule: no layer N+1 lands until layer N passes its gate against the
 emulator oracle, so the layers can never silently desync (the failure mode that
 produced the v1 spec-vs-impl drift).
+
+## 8. Roadmap: the v2 core plus the two unification projects
+
+This document specifies the v2 ISA *and* is the umbrella roadmap for the two
+architectural unifications layered on it. The three phases are sequenced so each is
+independently useful and each later phase only **consolidates** what an earlier phase
+froze — never contradicts it. Phases 2 and 3 are **future intended design, not frozen
+yet**; each is gated on its own proofs (see the companion docs' work items).
+
+### Phases
+
+- **Phase 1 — the v2 instruction set (this doc §0–§7).** Fixed 64-bit decode, no
+  `FLAGS`, LR/SC, uniform GPR file, TableGen-as-source. *Status: emulator + LLVM
+  largely landed; RTL/Coq in progress.* This is the substrate; freeze it first.
+- **Phase 2 — process = Resource Domain
+  ([`unified_domain_refactor.md`](unified_domain_refactor.md)).** Collapse
+  process/container/VM into one uniform node; address space and endpoints become held
+  capabilities; fork/exec/clone fall out of capability-sharing; names-are-data. Its
+  **track 1** (unification + cheap-leaf) is the scoped sub-project; **track 2**
+  (realtime scheduler) and **track 3** (migrating-IPC microarchitecture) are deferred
+  behind their proofs.
+- **Phase 3 — unified endpoint IPC
+  ([`unified_endpoint_ipc.md`](unified_endpoint_ipc.md)).** One endpoint object, one
+  `(bytes, caps)` message, four verbs `send`/`recv`/`call`/`wait`, and a frozen async
+  completion-ring. The `call` verb **is** Phase-2 track 3's migrating gate, so Phases
+  2 and 3 converge on one mechanism rather than adding two.
+
+### Forward-consistency reconciliation (what Phase 1 must not freeze shut)
+
+For the v2 ISA to stay coherent through Phases 2–3, Phase 1 must avoid hard-wiring
+into silicon the distinctions the later phases dissolve. The dissolutions:
+
+| v2-core today (Phase 1) | Unified target (Phases 2–3) | Rule for what Phase 1 freezes |
+| --- | --- | --- |
+| `process` notion separate from Resource Domain | one uniform **domain** node | Keep PID/PPID/PCR semantics, but treat them as **domain-keyed data** (names-are-data), not a distinct process object in RTL. |
+| FDR = 256-slot architectural file, separate from GPRs | one **handle namespace** — endpoints are held caps named by GPR handles | Keep FDR *semantics*; in RTL model the slots as a **cached view of held endpoint capabilities**, not an independent file Phase 3 must rip out (matches the "capabilities are GPR handles" migration). §4.2. |
+| `PULL`/`PUSH`/`READ_FD`/`WRITE_FD`/`CAP_SEND`/`CAP_RECV`/`RET_CAP` | `send` / `recv` | Their handlers already converge post-FDR→GPR migration; add **no new divergent transfer opcodes**. |
+| `AWAIT`/`AWAIT_EX`/`WAITABLE_PROBE`/`FUTEX_WAIT`/`THREAD_JOIN`/`WAIT_PID`/`SLEEP`/`ALARM` | one `wait(waitset, timeout)` | Keep readiness masks = POSIX `revents` (already true in the emulator); the unification is a re-expression, not new semantics. |
+| `GATE_CALL`/`CALL_CAP`/`RET_CAP` | `call` (migrating gate) + reply via `send` | The migrating semantics are Phase-2 track 3; freeze the gate and the `call` verb **together**. |
+| six static/`_dyn` opcode pairs | the static form only (GPR-handle semantics) | Do the Tier-1/2 mechanical dedup (`isa_v2_change_list.md`) **in Phase 1** — it removes scaffolding the later phases would otherwise inherit. |
+
+### Sequencing rule
+
+The §7 gating rule, extended across phases: **freeze Phase N only after its proofs
+pass, and never freeze a Phase-N representation the table above marks transitional in
+a way Phase N+1 cannot evolve without a silicon respin.** Phase 1 may *implement*
+FDR-as-file and the separate IPC/async opcodes — the emulator already does — but must
+not *freeze them into RTL as independent structures* before Phases 2–3 land, since
+both are slated to dissolve into the one endpoint/handle namespace. The new async
+ring (Phase 3) and the migrating call (Phase 2 track 3 = Phase 3 `call`) are frozen
+together, behind the bounded-ring WCET and ring capability-safety proofs.

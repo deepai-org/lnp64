@@ -67,6 +67,19 @@ several decisions above and adds its own:
 | D2 | Two assembler memory syntaxes (`[base,off]` in the Rust asm vs `off(base)` in LLVM) — unify on one grammar | **pending** |
 | D3 | `MULHSU` defined but pattern-less (unselectable) — wire a pattern or drop it | **pending (minor)** |
 
+## F. IPC / async opcode consolidation
+
+The IPC/async opcodes carry redundancy from the FDR→GPR-handle migration. Two
+mechanical tiers plus the full unification, tracked here; the full design is
+[`unified_endpoint_ipc.md`](unified_endpoint_ipc.md) (Phase 3 of
+[`isa_v2_design.md`](isa_v2_design.md) §8).
+
+| # | Change | Status |
+| --- | --- | --- |
+| F1 | **Mechanical static/`_dyn` dedup.** After "capabilities are GPR handles", the static forms read the fd/cap handle from a GPR — identical to their `_dyn` twins. Collapse the four pure duplicates (`pull`/`pull_dyn`, `push`/`push_dyn`, `await_ex`/`await_ex_dyn`, `waitable_probe`/`waitable_probe_dyn`); keep the static opcode, drop the `_dyn` twin. Frees 0x3b, 0x3c, 0x70, 0x72. | **pending (mechanical)** |
+| F2 | **Converge the two remaining pairs after migration.** `call_cap`/`call_cap_dyn` (migrate `call_cap` off the register-index form, then drop `_dyn`; frees 0x4e) and `await`/`await_dyn` (keep the richer timeout-carrying form, retire the other). | **pending (after `call_cap` migration)** |
+| F3 | **Full collapse → 4 verbs + ring (Tier 3).** `send`/`recv`/`call`/`wait` over one endpoint object + a frozen async completion-ring, per [`unified_endpoint_ipc.md`](unified_endpoint_ipc.md). Subsumes F1/F2 and the whole wait family (`await*`/`waitable_probe*`/`futex_wait`/`thread_join`/`wait_pid`/`sleep`/`alarm`). **Future intended design, not frozen yet** — gated on the bounded-ring WCET + ring capability-safety proofs. | **decision needed (design locked; freeze gated)** |
+
 ## Execution status (final reconciliation)
 
 **Done + validated:** A1-A6, B1-B3, C1-C4, E1 (callee-saved), E2 (**FULL
