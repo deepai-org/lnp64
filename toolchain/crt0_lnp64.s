@@ -6,17 +6,14 @@
 .globl _start
 .type _start,@function
 _start:
-  li r7, 0x7000
-  li r8, 0x100
-  mul r7, r7, r8
-  ld r1, 0(r7)
-  li r2, 8
-  add r2, r7, r2
+  li r7, 0x1900000   # r7 = arg page base (ARG_BASE)
+  ld r2, 0(r7)       # r2 = argc
+  addi r3, r7, 8     # r3 = &argv[0]
   li r8, 8
-  mul r3, r1, r8
-  add r3, r3, r2
-  add r3, r3, r8
+  mul r4, r2, r8     # r4 = argc * 8
+  add r4, r4, r8     # r4 += 8 (skip null terminator)
+  add r4, r4, r3     # r4 = &envp[0]
   errno_set r0
-  jal r1, main
-  # v2 ABI: main returns its value in r2 (the return-value register); r1 is ra.
+  jal r1, main       # r2=argc r3=argv r4=envp; r1 <- return address
+  # v2 ABI: main returns its value in r2 (the return-value register).
   exit r2

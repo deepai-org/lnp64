@@ -14002,13 +14002,15 @@ mod tests {
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
 
-        machine.next_tid = 17;
+        // A tid high enough that the per-thread stack address underflows below 0
+        // (STACK_TOP - CALL_FRAME - (tid-1)*STRIDE), forcing the ENOMEM path.
+        machine.next_tid = 200;
         machine
             .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(7), Some(0))
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 12);
-        assert_eq!(machine.next_tid, 17);
+        assert_eq!(machine.next_tid, 200);
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
 
@@ -14017,7 +14019,7 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
         assert_eq!(machine.next_pid, next_pid);
-        assert_eq!(machine.next_tid, 17);
+        assert_eq!(machine.next_tid, 200);
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
     }
@@ -16947,11 +16949,11 @@ mod tests {
             &child_path,
             r#"
             .text
-              LI r10, 0x700000
+              LI r10, 0x1900000
               LD r2, [r10, 0]
               LI r3, 2
               BNE r2, r3, bad
-              LI r4, 0x700020
+              LI r4, 0x1900020
               LD r5, [r4, 0]
               BEQ r5, r0, bad
               LD.B r6, [r5, 0]
@@ -19792,9 +19794,11 @@ mod tests {
         create_pipe_pair(&mut machine, 3, 4);
         machine.thread_mut().unwrap().regs[2] = 3;
         machine.thread_mut().unwrap().regs[3] = POLLIN_MASK;
+        // Non-zero timeout selects the blocking form (timeout==0 is a poll).
+        machine.thread_mut().unwrap().regs[4] = u64::MAX;
 
         let keep_ready = machine
-            .exec(Instr::AwaitDyn(Reg(5), Reg(2), Reg(3), Reg(0)))
+            .exec(Instr::AwaitDyn(Reg(5), Reg(2), Reg(3), Reg(4)))
             .unwrap();
         assert!(!keep_ready);
         assert_eq!(machine.fd_waiters.len(), 1);
