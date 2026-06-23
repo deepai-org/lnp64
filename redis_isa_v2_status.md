@@ -1,12 +1,13 @@
-# Redis-on-LNP64 under ISA v2 — status & remaining bug
+# Redis-on-LNP64 under ISA v2 — status
 
 _Last updated: 2026-06-23_
 
 ## Summary
 
-Redis 7.0.15 now **boots** under the ISA-v2 emulator and reaches
-`Ready to accept connections` in ~15 s. Two emulator bugs were found and fixed
-(committed); one **networking bug remains** and is fully diagnosed below.
+Redis 7.0.15 now **boots and serves clients** under the ISA-v2 emulator. The
+full smoke test (`scripts/run_redis.sh`) passes end-to-end:
+PING/SET/GET/DEL/INCR/RPUSH+LRANGE/HSET+HGET/SADD+SCARD/SISMEMBER/SMEMBERS/KEYS.
+Three emulator bugs were found and fixed (all committed).
 
 ## Fixed (committed: `emulator(isa-v2): per-thread LR/SC reservation + gate retire trace to fix OOM`)
 
@@ -24,30 +25,30 @@ Redis 7.0.15 now **boots** under the ISA-v2 emulator and reaches
    co-sim paths that emit `EMULATOR_RETIRE` enable it. Verified: Redis init now
    holds flat RSS (~15 MB) and reaches Ready in ~15 s.
 
-## REMAINING BUG — client socket reads target the wrong fd
+## FIXED — client socket reads targeted the wrong fd
 
-**Symptom.** Server reaches Ready; a client TCP connect succeeds and is accepted
-(host-side), but Redis never replies (PING times out). The kernel shows
-`Recv-Q=6` — the 6 bytes of `PING\r\n` sit unread — and the emulator spins at
-100 % CPU.
+_Committed: `emulator(isa-v2): PULL/PUSH/AWAIT/AWAITEX read fd handle from GPR`._
 
-**Root cause (verified by instrumentation).** After `accept()` installs the
-client socket at emulator-fd **9**, Redis's `readQueryFromClient` issues
-`read(9)` → `__lnp_pull` → the **`PULL` (opcode 0x2b)** instruction. The
-emulator's `Instr::Pull` handler uses **`fd.0`** — the *register number* of the
-operand — directly as the fd index:
+**Symptom.** Server reached Ready; a client TCP connect succeeded and was
+accepted (host-side), but Redis never replied (PING timed out). The kernel
+showed `Recv-Q=6` — the 6 bytes of `PING\r\n` sat unread — and the emulator
+spun at 100 % CPU.
+
+**Root cause.** After `accept()` installs the client socket at emulator-fd
+**9**, Redis's `readQueryFromClient` issues `read(9)` → `__lnp_pull` → the
+**`PULL` (opcode 0x2b)** instruction. The emulator's `Instr::Pull` handler used
+**`fd.0`** — the *register number* of the operand — directly as the fd index:
 
 ```rust
-// src/emulator.rs  (Instr::Pull / Push / Await / AwaitEx)
+// src/emulator.rs  (Instr::Pull / Push / Await / AwaitEx) — OLD, buggy
 if let Some(count) = self.read_fd_index(fd.0, addr, len)? { ... }
 ```
 
 The fd value (9) is held in register **r2** (a0), so `fd.0 == 2` and the read
-hits emulator-fd **2 = Stderr**. The real client fd is never read. (Writes have
-the same bug but it's masked: misrouting stdout→stderr is invisible under the
-`2>&1` log redirect.)
+hit emulator-fd **2 = Stderr**. The real client fd was never read. (Writes had
+the same bug, masked by the `2>&1` log redirect.)
 
-**Why this is the ISA-v2 contract, not the caller's fault.** Under the v2
+**Why this was the ISA-v2 contract, not the caller's fault.** Under the v2
 "capabilities are GPR handles" migration, `PULL`/`PUSH`/`AWAIT` take their fd
 operand as a **GPR whose value is the fd handle**, not a static fd-register
 index:
@@ -56,31 +57,25 @@ index:
 - Canonical v2 ABI asm: `toolchain/liblnp64_min.s` — `read: pull r2, r2, r3, r4`
   (fd value in r2).
 
-The dynamic twins already do the right thing:
+**The fix.** The static `Instr::Pull` (0x2b), `Instr::Push` (0x2c),
+`Instr::Await` (0x2e) and `Instr::AwaitEx` (0x71) handlers now read the fd
+**value** from the GPR named by the operand and resolve it via
+`decode_fd_value` / `checked_fd_index` — identical to their `*Dyn` twins. After
+the FDR→GPR migration the static and dynamic forms are semantically the same.
+The ~10 unit tests and the legacy `src/asm.rs` `fdN` asm-syntax tests that
+encoded the old "n is the fd index" convention were updated to preload the
+operand GPR with the fd handle value. `cargo test` at baseline (469 pass /
+4 pre-existing unrelated failures).
 
-```rust
-// Instr::PullDyn / PushDyn / AwaitDyn
-let fd_value = self.read_reg(fd_reg)?;
-let fd = self.decode_fd_value(fd_value)?;
-```
+## Known remaining inconsistency (not exercised by Redis)
 
-## Proposed fix (emulator-only; no Redis rebuild needed)
-
-Make the static `Instr::Pull` (0x2b), `Instr::Push` (0x2c), `Instr::Await`
-(0x2e), and `Instr::AwaitEx` (0x71) handlers read the fd **value** from the GPR
-named by the operand and `decode_fd_value` it — i.e. give them the same fd
-resolution as their `*Dyn` twins. After the FDR→GPR migration the static and
-dynamic forms are semantically identical.
-
-**Blast radius / why this wasn't landed here:** ~12 emulator unit tests
-construct these with `FdReg(n)` relying on the *old* "n is the fd index"
-semantics (e.g. `Instr::Await(Reg(5), FdReg(3), Reg(2))`); they must preload the
-operand register with the fd value. The legacy `src/asm.rs` `parse_fd` (`fdN`
-syntax) path is also index-based and only used by these tests — real code is
-emitted by LLVM/llvm-mc with GPR operands. Because this is core fd-execution
-semantics that the **active ISA-v2 migration owns** (continuous commits to
-master on a shared worktree), it should be landed there to avoid conflicting
-edits, rather than as a side change from the Redis bring-up.
+The migration is partial: the **other** static fd-taking instructions still
+treat their `FdReg` operand as an index — `ReadFd` (0x2d), `WriteFd` (0x57),
+`PreadFd`, `ReaddirFd`, `WaitableProbe`, `WaitOnFd`, `FdDup2`, `CallCap`,
+`Mmap`. Redis routes all socket I/O through `PULL`/`PUSH`/`AWAIT`, so it is
+unaffected, but for a coherent ISA these should also be migrated to GPR-value
+semantics (with the same test/asm-syntax follow-through). Owned by the active
+ISA-v2 migration; deferred to avoid a large blast radius on the shared worktree.
 
 ## Repro / verification harness
 
