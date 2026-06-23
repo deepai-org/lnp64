@@ -616,6 +616,13 @@ const MSG_MAX_CAPS: u64 = 16;
 /// Default endpoint queue depth when the create hint is 0.
 const ENDPOINT_DEFAULT_CAPACITY: usize = 64;
 
+/// Frozen waitset-entry layout (bytes) for the `wait` verb. The waitset
+/// descriptor is `{ [0]=entries_ptr, [8]=count }`; each entry is 24 bytes.
+const WAITSET_ENTRY_SIZE: u64 = 24;
+const WAITSET_ENTRY_HANDLE: u64 = 0; // u64: endpoint handle value
+const WAITSET_ENTRY_EVENTS: u64 = 8; // u64: requested POSIX events mask
+const WAITSET_ENTRY_REVENTS: u64 = 16; // u64: returned revents (written back)
+
 impl PipeBuffer {
     fn can_push_bytes(&self, len: usize) -> bool {
         self.bytes
@@ -2163,6 +2170,7 @@ impl Machine {
             // Unified endpoint IPC verbs (Phase 3).
             0x83 => Instr::Send(a, b, c),
             0x84 => Instr::Recv(a, b, c),
+            0x86 => Instr::Wait(a, b, c),
             0x88 => Instr::EndpointCreate(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
@@ -4304,6 +4312,11 @@ impl Machine {
                 let ep_value = self.read_reg(ep)?;
                 let desc = self.read_reg(desc)?;
                 self.ep_recv(result, ep_value, desc)?;
+            }
+            Instr::Wait(result, waitset, timeout) => {
+                let waitset = self.read_reg(waitset)?;
+                let timeout = self.read_reg(timeout)?;
+                return self.ep_wait(result, waitset, timeout);
             }
             Instr::CapSend(result, argblock) => {
                 self.cap_send(result, self.read_reg(argblock)?)?;
@@ -6588,6 +6601,66 @@ impl Machine {
         self.bump_fd_generation(dst).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[dst] = payload.handle;
         self.fd_token(dst).map_err(|_| 9u64)
+    }
+
+    // `wait(waitset, timeout)` — the unified wait verb. Blocks until any edge in
+    // the set fires. Subsumes await/await_ex/waitable_probe/futex_wait/
+    // thread_join/wait_pid/sleep/alarm (each is `wait` over its edge source).
+    //
+    // Waitset descriptor (frozen, in guest memory): `[0]=entries_ptr`,
+    // `[8]=count`. Each entry is 24 bytes: `[0]=handle`, `[8]=events`
+    // (POSIX mask), `[16]=revents` (written back). Returns the number of ready
+    // entries (POSIX poll semantics). timeout==0 is a non-blocking poll; a
+    // non-zero timeout blocks until an edge fires.
+    fn ep_wait(&mut self, result: Reg, waitset: u64, timeout: u64) -> Result<bool, String> {
+        Self::ensure_result_reg_writable(result)?;
+        // Drop any waiters this thread parked on a prior execution of this wait
+        // (re-execution after wake), so they cannot accumulate across rewinds.
+        let tid = self.current_tid;
+        self.fd_waiters.retain(|w| w.tid != tid);
+
+        let entries_ptr = self.load_u64_offset(waitset, 0)?;
+        let count = self.load_u64_offset(waitset, 8)?;
+        if count > FDR_COUNT as u64 {
+            self.complete_reg_err(result, 22)?; // EINVAL — implausible set size
+            return Ok(true);
+        }
+
+        let mut ready_count: u64 = 0;
+        // (fd, events) pairs to park on if nothing is ready.
+        let mut to_park: Vec<(usize, u64)> = Vec::new();
+        for i in 0..count {
+            let entry = entries_ptr
+                .checked_add(i.checked_mul(WAITSET_ENTRY_SIZE).ok_or("waitset overflow")?)
+                .ok_or("waitset overflow")?;
+            let handle = self.load_u64_offset(entry, WAITSET_ENTRY_HANDLE)?;
+            let events = self.load_u64_offset(entry, WAITSET_ENTRY_EVENTS)?;
+            let revents = match self.decode_fd_value(handle) {
+                Ok(fd) => self.poll_fd_index_mask_raw(fd, events)?,
+                Err(_) => POLLNVAL_MASK,
+            };
+            self.store_u64_offset(entry, WAITSET_ENTRY_REVENTS, revents)?;
+            if revents != 0 {
+                ready_count += 1;
+            } else if let Ok(fd) = self.decode_fd_value(handle) {
+                to_park.push((fd, events));
+            }
+        }
+
+        if ready_count > 0 || timeout == 0 {
+            self.set_errno(0)?;
+            self.complete_reg_ok(result, ready_count)?;
+            return Ok(true);
+        }
+
+        // Nothing ready and a blocking timeout: park on every edge source and
+        // re-execute `wait` (re-poll) when any of them fires.
+        self.rewind_current_ip_for_block()?;
+        for (fd, events) in to_park {
+            self.push_fd_waiter(fd, events, None)?;
+        }
+        self.ready.retain(|t| *t != tid);
+        Ok(false)
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
@@ -11915,6 +11988,117 @@ mod tests {
         let installed = machine.load_u64(recv_caps).unwrap();
         let fd = machine.decode_fd_value(installed).unwrap();
         assert!(matches!(machine.process().unwrap().fds[fd], FdHandle::PipeReader(_)));
+    }
+
+    fn write_waitset(machine: &mut Machine, desc: u64, entries: u64, items: &[(u64, u64)]) {
+        machine.store_u64(desc, entries).unwrap();
+        machine.store_u64(desc + 8, items.len() as u64).unwrap();
+        for (i, (handle, events)) in items.iter().enumerate() {
+            let e = entries + i as u64 * WAITSET_ENTRY_SIZE;
+            machine.store_u64(e + WAITSET_ENTRY_HANDLE, *handle).unwrap();
+            machine.store_u64(e + WAITSET_ENTRY_EVENTS, *events).unwrap();
+            machine.store_u64(e + WAITSET_ENTRY_REVENTS, 0).unwrap();
+        }
+    }
+
+    fn endpoint_with_message(machine: &mut Machine) -> u64 {
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        let send_desc = ARG_BASE + 0x100;
+        let payload = ARG_BASE + 0x200;
+        machine.write_bytes(payload, b"x").unwrap();
+        write_msg_desc(machine, send_desc, payload, 1, 0, 0);
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        token
+    }
+
+    #[test]
+    fn wait_polls_ready_endpoint_and_returns_count() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let token = endpoint_with_message(&mut machine);
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(token, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = 0; // non-blocking poll
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[7], 1);
+        assert_eq!(
+            machine.load_u64(entries + WAITSET_ENTRY_REVENTS).unwrap(),
+            POLLIN_MASK
+        );
+    }
+
+    #[test]
+    fn wait_nonblocking_empty_returns_zero() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(token, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = 0;
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[7], 0);
+        assert_eq!(machine.load_u64(entries + WAITSET_ENTRY_REVENTS).unwrap(), 0);
+    }
+
+    #[test]
+    fn wait_reports_pollnval_for_bad_handle() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(-1i64 as u64, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = 0;
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[7], 1);
+        assert_eq!(
+            machine.load_u64(entries + WAITSET_ENTRY_REVENTS).unwrap(),
+            POLLNVAL_MASK
+        );
+    }
+
+    #[test]
+    fn wait_blocks_then_wakes_when_endpoint_becomes_ready() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(token, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = 1; // blocking timeout
+
+        // Empty endpoint: wait parks the thread.
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.fd_waiters.len(), 1);
+        assert!(!machine.ready.contains(&1));
+
+        // A send to the endpoint wakes the parked thread.
+        let send_desc = ARG_BASE + 0x100;
+        let payload = ARG_BASE + 0x200;
+        machine.write_bytes(payload, b"z").unwrap();
+        write_msg_desc(&mut machine, send_desc, payload, 1, 0, 0);
+        machine.thread_mut().unwrap().regs[4] = send_desc;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert!(machine.ready.contains(&1));
+
+        // Re-executing wait now reports the endpoint ready.
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[7], 1);
+        assert!(machine.fd_waiters.is_empty());
     }
 
     #[test]

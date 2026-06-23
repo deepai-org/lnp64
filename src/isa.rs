@@ -259,6 +259,9 @@ pub enum Instr {
     Send(Reg, Reg, Reg),
     // Recv rd, rs1(ep handle), rs2(msg-descriptor ptr) -> rd = bytes received or -errno.
     Recv(Reg, Reg, Reg),
+    // Wait rd, rs1(waitset-descriptor ptr), rs2(timeout) -> rd = #ready or -errno.
+    // Collapses await/await_ex/waitable_probe/futex_wait/thread_join/wait_pid/sleep/alarm.
+    Wait(Reg, Reg, Reg),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

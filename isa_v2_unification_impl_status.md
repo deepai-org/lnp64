@@ -20,7 +20,7 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | --- | --- | --- |
 | EP-A endpoint object: `Endpoint` held-cap kind, `(bytes,caps)` message queue + mode | emulator | **done** |
 | EP-B `send` / `recv` verbs over endpoint handles (non-blocking; byte-fd delegation TBD) | emulator | **done** |
-| EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | pending |
+| EP-C `wait(waitset,timeout)` (collapse await/probe/futex_wait/join/wait_pid/sleep/alarm) | emulator | **done** (poll + block-until-edge; timed wakeup TBD) |
 | EP-D `gate_call`/`gate_return` = the `call` verb (cross-domain migrating gate) | emulator | **built + M2-proven** (existing 0x2f) |
 | EP-E async completion ring: SQE/CQE schema freeze + ring engine + `ring_enter`/wait-on-ring | emulator + schema | pending |
 | EP-F bounded-ring WCET + ring cap-safety proofs (E4 — **gate before RTL**) | formal | pending |
@@ -52,3 +52,8 @@ compositional-schedulability + WCET proofs before any RTL.
   `send`/`recv` (0x88/0x83/0x84) in the emulator oracle; caps resolved against the
   sender's table, installed into the receiver's by the engine. 3 unit tests;
   476 cargo pass; Redis smoke green.
+- EP-C: `wait(waitset, timeout)` (0x86) — frozen 24-byte waitset entry
+  {handle,events,revents}; POSIX-poll count semantics; non-blocking poll
+  (timeout=0) + block-until-edge (re-poll on wake via the fd-waiter park model);
+  POLLNVAL for bad handles. 4 unit tests; 480 cargo pass. (Timed wakeup on a
+  finite timeout still TBD — matches AwaitDyn's current nonzero=block.)
