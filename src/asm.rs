@@ -782,6 +782,23 @@ impl Parser {
                 arity(3)?;
                 Instr::MsgSend(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            // Unified endpoint IPC verbs (unified_object_model.md §3).
+            "ENDPOINT_CREATE" => {
+                arity(2)?;
+                Instr::EndpointCreate(reg(&args[0])?, reg(&args[1])?)
+            }
+            "SEND" => {
+                arity(3)?;
+                Instr::Send(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "RECV" => {
+                arity(3)?;
+                Instr::Recv(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "WAIT" => {
+                arity(3)?;
+                Instr::Wait(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "OBJECT_CTL" | "EVENT_CTL" | "TIMER_CTL" => {
                 arity(2)?;
                 Instr::ObjectCtl(reg(&args[0])?, reg(&args[1])?)
@@ -1288,6 +1305,36 @@ mod tests {
         assert!(matches!(
             program.instructions[3],
             Instr::WaitableProbeDyn(Reg(10), Reg(11), Reg(12))
+        ));
+    }
+
+    #[test]
+    fn parses_unified_endpoint_verbs() {
+        let program = Program::parse(
+            r#"
+            .text
+              ENDPOINT_CREATE r2, r0
+              SEND r3, r2, r4
+              RECV r5, r2, r6
+              WAIT r7, r8, r9
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::EndpointCreate(Reg(2), Reg(0))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::Send(Reg(3), Reg(2), Reg(4))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::Recv(Reg(5), Reg(2), Reg(6))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::Wait(Reg(7), Reg(8), Reg(9))
         ));
     }
 
