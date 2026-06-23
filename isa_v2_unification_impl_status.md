@@ -25,7 +25,7 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | EP-E "ring" = a **Memory-backed endpoint** — **no opcode** (refined §3); submit/reap via `send`/`recv`, poll via `wait` | emulator | **subsumed by EP-A** |
 | EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | **done** (Lean `formal/EPEndpointModel.lean`; M-series witness/RTL pipeline TBD) |
 | EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | **done** (byte-fd + Register via write/read delegation; SCM_RIGHTS caps over byte fds TBD) |
-| EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | pending |
+| EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | **backend done** (`.td` SEND/RECV/WAIT/ENDPOINT_CREATE + SDNodes + `LowerCall` shims for `__lnp_send/recv/wait/endpoint_create`); libc shim rewrites TBD; validating in docker |
 | EP-I RTL endpoint/gate engine (only after EP-F) | rtl | blocked on EP-F |
 
 Opcode assignments: `send`=0x83, `recv`=0x84, `wait`=0x86, `endpoint_create`=0x88
@@ -38,10 +38,10 @@ Producer{sw,hw}` type, fixed at create.
 
 | Item | Layer | Status |
 | --- | --- | --- |
-| N1 design.md: process = domain holding addr-space cap + threads; names-are-data | docs | pending |
+| N1 design.md: process = domain holding addr-space cap + threads; names-are-data | docs | **done** (Resource Domain section reframed; points to unified_object_model.md) |
 | N2 schema + emulator: one uniform domain record (limit only; reservation slot empty) | schema + emulator | pending |
 | N3 formal/M-series: re-confirm confinement under fork/exec/signal/wait as domain ops | formal | pending |
-| N4 leaf-profile cost guard; fail-closed on slot exhaustion | emulator | pending |
+| N4 leaf-profile cost guard; fail-closed on slot exhaustion | emulator | **done** (M14 domain-budget; fork-bomb fail-closed test landed) |
 | N5 cheap-leaf: sparse node, DDR-backed DDT + hot cache, O(1) COW fork, budget-bounded clone | emulator | pending |
 
 ## Deferred (do NOT freeze — per spec)
