@@ -547,6 +547,15 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         0x24: opcodes["LNP64_OP_BRANCH_GE"],
         0x25: opcodes["LNP64_OP_BRANCH_LTU"],
         0x26: opcodes["LNP64_OP_BRANCH_GEU"],
+        # Fused compare-and-select sel.<cc> (all decode to Instr::Sel in the
+        # emulator, so the name-regex map can't distinguish the six arch ops —
+        # list them explicitly).
+        0x40: opcodes["LNP64_OP_SEL_EQ"],
+        0x41: opcodes["LNP64_OP_SEL_NE"],
+        0x42: opcodes["LNP64_OP_SEL_LT"],
+        0x43: opcodes["LNP64_OP_SEL_GE"],
+        0x44: opcodes["LNP64_OP_SEL_LTU"],
+        0x45: opcodes["LNP64_OP_SEL_GEU"],
         0x27: opcodes["LNP64_OP_JAL"],
         0x28: opcodes["LNP64_OP_JALR"],
         0x30: opcodes["LNP64_OP_LD"],
