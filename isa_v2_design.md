@@ -13,20 +13,18 @@ cost once, now, and let Phase 1 prove against v2 instead of throwing v1 proofs
 away.
 
 **Scope of this document.** It specifies the v2 instruction set (§0–§7) *and* serves
-as the umbrella roadmap (§8) for the two architectural unification projects layered
-on top of it:
+as the umbrella roadmap (§8) for the architectural unification layered on top of it:
 
-- [`unified_domain_refactor.md`](unified_domain_refactor.md) — process = Resource
-  Domain (one uniform node; address space and endpoints as held capabilities;
-  fork/exec/clone as capability-sharing; names-are-data), plus the deferred
-  realtime-scheduler and migrating-IPC tracks.
-- [`unified_endpoint_ipc.md`](unified_endpoint_ipc.md) — one endpoint object, one
-  `(bytes, caps)` message, four verbs (`send`/`recv`/`call`/`wait`) and a frozen
-  async completion-ring; collapses the ~20 IPC/async opcodes.
+- [`unified_object_model.md`](unified_object_model.md) — the single design/thesis doc:
+  process = Resource Domain **and** one endpoint object are one held-capability table;
+  fork/exec/clone as capability-sharing; `send`/`recv`/`gate_call`/`wait` over endpoints;
+  a frozen async completion-ring; names-are-data. (Merges the former
+  `unified_domain_refactor.md` + `unified_endpoint_ipc.md`.) Live per-layer status +
+  opcode slots: [`isa_v2_unification_impl_status.md`](isa_v2_unification_impl_status.md).
 
-Both are **future intended design, not frozen yet** (each carries its own
-proof-before-freeze gate). §8 reconciles the v2 core with them — so nothing frozen now
-blocks them — and lays out the implementation phases.
+The unification is **partly built and Lean-proven, partly future** (each piece carries
+its own proof-before-freeze gate). §8 reconciles the v2 core with it — so nothing frozen
+now blocks it — and lays out the implementation phases.
 
 ## 0. The width decision: fixed 64-bit instructions
 
@@ -287,10 +285,10 @@ natively in one word, removing the v1 trailing-word hack. Interactions:
   the per-region `R/W/X` permission model, see §4.5.
 - **Forward consistency (Phase 3, not frozen).** The FDR-as-separate-file model is
   *transitional*. The in-flight "capabilities are GPR handles" migration and
-  [`unified_endpoint_ipc.md`](unified_endpoint_ipc.md) collapse `PULL`/`PUSH`/
+  [`unified_object_model.md`](unified_object_model.md) collapse `PULL`/`PUSH`/
   `CAP_SEND`/`CAP_RECV`/`GATE_CALL` into `send`/`recv`/`call`/`wait` over **endpoint
   handles** in one GPR handle namespace, and
-  [`unified_domain_refactor.md`](unified_domain_refactor.md) makes the address space
+  [`unified_object_model.md`](unified_object_model.md) makes the address space
   and endpoints **held capabilities of a Resource Domain**. v2 keeps FDR *semantics*
   now, but RTL should model the 256 slots as a **cached view of held endpoint
   capabilities**, not an independent register file that Phase 3 must rip out. See §8.
@@ -407,14 +405,14 @@ yet**; each is gated on its own proofs (see the companion docs' work items).
   `FLAGS`, LR/SC, uniform GPR file, TableGen-as-source. *Status: emulator + LLVM
   largely landed; RTL/Coq in progress.* This is the substrate; freeze it first.
 - **Phase 2 — process = Resource Domain
-  ([`unified_domain_refactor.md`](unified_domain_refactor.md)).** Collapse
+  ([`unified_object_model.md`](unified_object_model.md)).** Collapse
   process/container/VM into one uniform node; address space and endpoints become held
   capabilities; fork/exec/clone fall out of capability-sharing; names-are-data. Its
   **track 1** (unification + cheap-leaf) is the scoped sub-project; **track 2**
   (realtime scheduler) and **track 3** (migrating-IPC microarchitecture) are deferred
   behind their proofs.
 - **Phase 3 — unified endpoint IPC
-  ([`unified_endpoint_ipc.md`](unified_endpoint_ipc.md)).** One endpoint object, one
+  ([`unified_object_model.md`](unified_object_model.md)).** One endpoint object, one
   `(bytes, caps)` message, four verbs `send`/`recv`/`call`/`wait`, and a frozen async
   completion-ring. The `call` verb **is** Phase-2 track 3's migrating gate, so Phases
   2 and 3 converge on one mechanism rather than adding two.

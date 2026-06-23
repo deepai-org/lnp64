@@ -113,9 +113,11 @@ Architecture and hardware:
 
 - `design.md`: ISA and architectural contract.
 - `hardware_design.md`: RTL-facing hardware design sketch.
-- `unified_domain_refactor.md`: planned refactor unifying processes/containers/VMs
-  into one uniform Resource Domain node, keeping POSIX frozen in silicon as
-  data-only domain-keyed naming.
+- `unified_object_model.md`: the unification thesis — processes/containers/VMs **and**
+  the IPC/async surface are one held-capability table (Resource Domains + endpoints;
+  `send`/`recv`/`gate_call`/`wait`), keeping POSIX frozen in silicon as data-only
+  domain-keyed naming. (Merges the former `unified_domain_refactor.md` +
+  `unified_endpoint_ipc.md`; live status in `isa_v2_unification_impl_status.md`.)
 - `formal_rtl_codesign_roadmap.md`: formal/RTL co-design plan, trust levels,
   proof coupling, and S0/M1+ work order.
 - `formal_theorems.md`: top-level theorem and proof goals.

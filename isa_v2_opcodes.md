@@ -236,6 +236,28 @@ place the 5th operand in the `rs4` slot.
 | 0x82 | `load_ucode` | 0xcb | `futex_wait` |
 | 0xcc | `futex_wake` | 0xcf | `readdir_fd_dyn` |
 
+## 10. Unified endpoint IPC (Phase 3, `unified_object_model.md`)
+
+The four verbs over an endpoint held-capability + a `(bytes, caps)` message.
+Operands are GPRs holding handle/pointer **values** (post-FDR→GPR migration).
+Landing incrementally oracle-first; **not frozen into RTL** until the
+bounded-ring WCET + ring-cap-safety proofs (E4) pass.
+
+| Op | Mnemonic | Form | Semantics | Status |
+| --- | --- | --- | --- | --- |
+| 0x83 | `send` | `rd, rs1(ep), rs2(msgdesc)` | enqueue one `(bytes,caps)` message; rd=bytes or -errno | **emulator** |
+| 0x84 | `recv` | `rd, rs1(ep), rs2(msgdesc)` | dequeue one message; install caps; rd=bytes or -errno (EAGAIN if empty) | **emulator** |
+| 0x88 | `endpoint_create` | `rd, rs1(hint)` | mint an endpoint cap; rd=handle | **emulator** |
+| 0x85 | `call` | `rd, rs1(ep), rs2(msgdesc)` | fused send + wait-for-reply (one-shot reply ep) | reserved |
+| 0x86 | `wait` | `rd, rs1(waitset), rs2(timeout)` | block until an edge in the set fires | reserved |
+| 0x87 | `ring_enter` | `rd, rs1(ring), rs2(submit/min/timeout block)` | submit SQEs + reap CQEs | reserved |
+
+**Message descriptor** (frozen, in guest memory): `[0]=bytes_ptr`,
+`[8]=bytes_len` (send in; recv buffer-cap in / actual out), `[16]=caps_ptr`
+(array of u64 cap handles), `[24]=caps_len` (send #caps; recv buffer-cap in /
+actual out). Caps in a message are cap-table handles resolved against the
+*sender's* table and installed into the *receiver's* by the engine.
+
 ## Removed in v2 (no trace retained)
 
 - Condition-code machine: `cmp`(0x1b→`slt`), `cmpu`(0x1c→`sltu`), `cset.*`
@@ -247,4 +269,5 @@ place the 5th operand in the `rs4` slot.
   `lock.cmpxchg`(0xc9).
 
 Free opcode slots after migration: 0x0a-0x0f, 0x1f, 0x29, 0x2a, 0x3d-0x46,
-0x83-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff.
+0x89-0x9f, 0xbb-0xc4, 0xc7-0xca, 0xd1-0xff. (0x83-0x88 reserved for the
+unified-endpoint verbs, §10.)
