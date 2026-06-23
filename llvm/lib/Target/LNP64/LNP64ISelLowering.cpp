@@ -126,6 +126,14 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::PULL";
   case LNP64ISD::PUSH:
     return "LNP64ISD::PUSH";
+  case LNP64ISD::SEND:
+    return "LNP64ISD::SEND";
+  case LNP64ISD::RECV:
+    return "LNP64ISD::RECV";
+  case LNP64ISD::WAIT:
+    return "LNP64ISD::WAIT";
+  case LNP64ISD::ENDPOINT_CREATE:
+    return "LNP64ISD::ENDPOINT_CREATE";
   case LNP64ISD::WRAPPER:
     return "LNP64ISD::WRAPPER";
   case LNP64ISD::RET_FLAG:
@@ -442,14 +450,34 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     InVals.push_back(NativeShim);
     return NativeShim.getValue(1);
   }
-  if (CalleeName == "__lnp_domain_ctl" || CalleeName == "__lnp_object_ctl") {
+  // Unified endpoint verbs taking two source operands and a result
+  // (unified_object_model.md §3): send(ep,msgdesc), recv(ep,buf),
+  // wait(waitset,timeout).
+  if (CalleeName == "__lnp_send" || CalleeName == "__lnp_recv" ||
+      CalleeName == "__lnp_wait") {
+    if (CLI.OutVals.size() != 2 || CLI.Ins.empty())
+      llvm_unreachable(
+          "LNP64 endpoint verb lowering expects two arguments and a result");
+    SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
+    SmallVector<SDValue, 3> Ops = {Chain, CLI.OutVals[0], CLI.OutVals[1]};
+    unsigned Opcode = CalleeName == "__lnp_send"   ? LNP64ISD::SEND
+                      : CalleeName == "__lnp_recv" ? LNP64ISD::RECV
+                                                   : LNP64ISD::WAIT;
+    SDValue NativeVerb = DAG.getNode(Opcode, DL, NodeTys, Ops);
+    InVals.push_back(NativeVerb);
+    return NativeVerb.getValue(1);
+  }
+  if (CalleeName == "__lnp_domain_ctl" || CalleeName == "__lnp_object_ctl" ||
+      CalleeName == "__lnp_endpoint_create") {
     if (CLI.OutVals.size() != 1 || CLI.Ins.empty())
       llvm_unreachable(
           "LNP64 native control lowering expects one argument and a result");
     SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
     SmallVector<SDValue, 2> Ops = {Chain, CLI.OutVals[0]};
     unsigned Opcode = CalleeName == "__lnp_domain_ctl" ? LNP64ISD::DOMAIN_CTL
-                                                       : LNP64ISD::OBJECT_CTL;
+                      : CalleeName == "__lnp_object_ctl"
+                          ? LNP64ISD::OBJECT_CTL
+                          : LNP64ISD::ENDPOINT_CREATE;
     SDValue NativeCtl = DAG.getNode(Opcode, DL, NodeTys, Ops);
     InVals.push_back(NativeCtl);
     return NativeCtl.getValue(1);

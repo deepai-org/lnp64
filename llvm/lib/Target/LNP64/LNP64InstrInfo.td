@@ -93,6 +93,9 @@ def LNP64callseq_end : SDNode<"ISD::CALLSEQ_END", SDT_LNP64CallSeqEnd,
 def SDT_LNP64Native1 : SDTypeProfile<1, 1, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>
 ]>;
+def SDT_LNP64Native2 : SDTypeProfile<1, 2, [
+  SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>
+]>;
 def SDT_LNP64Native3 : SDTypeProfile<1, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>, SDTCisVT<3, i64>
 ]>;
@@ -107,6 +110,13 @@ def LNP64objectctl : SDNode<"LNP64ISD::OBJECT_CTL", SDT_LNP64Native1,
                             [SDNPHasChain]>;
 def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3, [SDNPHasChain]>;
 def LNP64push : SDNode<"LNP64ISD::PUSH", SDT_LNP64Native3, [SDNPHasChain]>;
+// Unified endpoint IPC verbs (unified_object_model.md §3): two source operands
+// (send/recv/wait) and a result; endpoint_create takes one (the type/hint).
+def LNP64send : SDNode<"LNP64ISD::SEND", SDT_LNP64Native2, [SDNPHasChain]>;
+def LNP64recv : SDNode<"LNP64ISD::RECV", SDT_LNP64Native2, [SDNPHasChain]>;
+def LNP64wait : SDNode<"LNP64ISD::WAIT", SDT_LNP64Native2, [SDNPHasChain]>;
+def LNP64endpointcreate : SDNode<"LNP64ISD::ENDPOINT_CREATE", SDT_LNP64Native1,
+                                 [SDNPHasChain]>;
 def SDT_LNP64Wrapper : SDTypeProfile<1, 1, [
   SDTCisSameAs<0, 1>, SDTCisPtrTy<0>
 ]>;
@@ -224,6 +234,16 @@ class LNP64Native2<string Mnemonic>
   bits<5> arg;
   let Inst{55-51} = rd;
   let Inst{50-46} = arg;
+}
+class LNP64Native3<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$arg0, GPR:$arg1),
+                Mnemonic, "\t$rd, $arg0, $arg1"> {
+  bits<5> rd;
+  bits<5> arg0;
+  bits<5> arg1;
+  let Inst{55-51} = rd;
+  let Inst{50-46} = arg0;
+  let Inst{45-41} = arg1;
 }
 class LNP64Status5<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2, GPR:$arg3,
@@ -817,6 +837,23 @@ def ENV_GET : LNP64Inst<(outs GPR:$rd), (ins GPR:$key, GPR:$index, GPR:$len),
 def OBJECT_CTL : LNP64Native2<"object_ctl"> {
   let Opcode = 0x4b;
   let Pattern = [(set GPR:$rd, (LNP64objectctl GPR:$arg))];
+}
+// Unified endpoint IPC verbs (unified_object_model.md §3).
+def SEND : LNP64Native3<"send"> {
+  let Opcode = 0x83;
+  let Pattern = [(set GPR:$rd, (LNP64send GPR:$arg0, GPR:$arg1))];
+}
+def RECV : LNP64Native3<"recv"> {
+  let Opcode = 0x84;
+  let Pattern = [(set GPR:$rd, (LNP64recv GPR:$arg0, GPR:$arg1))];
+}
+def WAIT : LNP64Native3<"wait"> {
+  let Opcode = 0x86;
+  let Pattern = [(set GPR:$rd, (LNP64wait GPR:$arg0, GPR:$arg1))];
+}
+def ENDPOINT_CREATE : LNP64Native2<"endpoint_create"> {
+  let Opcode = 0x88;
+  let Pattern = [(set GPR:$rd, (LNP64endpointcreate GPR:$arg))];
 }
 def DOMAIN_CTL : LNP64Native2<"domain_ctl"> {
   let Opcode = 0x4c;

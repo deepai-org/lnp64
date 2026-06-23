@@ -20,6 +20,11 @@ enum NodeType : unsigned {
   OBJECT_CTL,
   PULL,
   PUSH,
+  // Unified endpoint IPC verbs (unified_object_model.md §3).
+  SEND,
+  RECV,
+  WAIT,
+  ENDPOINT_CREATE,
   WRAPPER,
   RET_FLAG,
 };
