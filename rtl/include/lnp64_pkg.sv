@@ -315,6 +315,27 @@ package lnp64_pkg;
         LNP64_M15_COMMIT_GATE_PROFILE   = 8'd6
     } lnp64_m15_object_op_e;
 
+    // M16 unified-endpoint typed-trace ops (send/recv/wait/create over a
+    // backing-typed endpoint; the "ring" is a Memory-backed endpoint).
+    typedef enum logic [7:0] {
+        LNP64_M16_COMMIT_CREATE      = 8'd1,
+        LNP64_M16_COMMIT_SEND        = 8'd2,
+        LNP64_M16_COMMIT_RECV        = 8'd3,
+        LNP64_M16_COMMIT_WAIT        = 8'd4,
+        LNP64_M16_COMMIT_SEND_FULL   = 8'd5,
+        LNP64_M16_COMMIT_RECV_EMPTY  = 8'd6,
+        LNP64_M16_COMMIT_OVERSIZE    = 8'd7,
+        LNP64_M16_COMMIT_NOTIFY      = 8'd8,
+        LNP64_M16_COMMIT_CAP_SEND    = 8'd9,
+        LNP64_M16_COMMIT_CAP_REJECT  = 8'd10
+    } lnp64_m16_endpoint_op_e;
+
+    typedef enum logic [7:0] {
+        LNP64_M16_BACKING_THREAD   = 8'd1,
+        LNP64_M16_BACKING_MEMORY   = 8'd2,
+        LNP64_M16_BACKING_REGISTER = 8'd3
+    } lnp64_m16_backing_e;
+
     typedef enum logic [7:0] {
         LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
         LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
@@ -836,6 +857,50 @@ package lnp64_pkg;
         logic        gate_continuation_unique;
         logic        counts_exact;
     } lnp64_m15_state_projection_t;
+
+    // M16 endpoint per-op commit: a queue engine (EP-F). backing selects
+    // Thread/Memory/Register; caps_resolved/installed track SCM_RIGHTS-style
+    // cap transfer; sender/receiver domains scope cap-safety.
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] endpoint_id;
+        logic [31:0] endpoint_gen;
+        logic [7:0]  backing;
+        logic [31:0] bytes_len;
+        logic [31:0] caps_len;
+        logic [31:0] depth;
+        logic [31:0] capacity;
+        logic [31:0] caps_resolved;
+        logic [31:0] caps_installed;
+        logic [31:0] sender_domain_id;
+        logic [31:0] sender_domain_gen;
+        logic [31:0] receiver_domain_id;
+        logic [31:0] receiver_domain_gen;
+    } lnp64_m16_endpoint_commit_t;
+
+    // M16 invariant projection (straight from EP-F): bounded (a), fail-closed
+    // (b), cap-safety (c), framing (d).
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] depth;
+        logic [31:0] capacity;
+        logic [31:0] failures;
+        logic [31:0] events;
+        logic        bounded_depth_le_capacity;
+        logic        drain_bounded_by_capacity;
+        logic        full_fails_closed;
+        logic        empty_fails_closed;
+        logic        oversize_fails_closed;
+        logic        no_block_except_wait;
+        logic        caps_resolve_sender_only;
+        logic        caps_reject_out_of_range;
+        logic        install_no_amplify;
+        logic        framing_one_send_one_recv;
+        logic        notify_raises_register_edge;
+        logic        counts_exact;
+    } lnp64_m16_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

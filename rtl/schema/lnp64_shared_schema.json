@@ -302,6 +302,23 @@
       "LNP64_M15_COMMIT_STALE_EVENT=8'd5",
       "LNP64_M15_COMMIT_GATE_PROFILE=8'd6"
     ],
+    "lnp64_m16_endpoint_op_e": [
+      "LNP64_M16_COMMIT_CREATE=8'd1",
+      "LNP64_M16_COMMIT_SEND=8'd2",
+      "LNP64_M16_COMMIT_RECV=8'd3",
+      "LNP64_M16_COMMIT_WAIT=8'd4",
+      "LNP64_M16_COMMIT_SEND_FULL=8'd5",
+      "LNP64_M16_COMMIT_RECV_EMPTY=8'd6",
+      "LNP64_M16_COMMIT_OVERSIZE=8'd7",
+      "LNP64_M16_COMMIT_NOTIFY=8'd8",
+      "LNP64_M16_COMMIT_CAP_SEND=8'd9",
+      "LNP64_M16_COMMIT_CAP_REJECT=8'd10"
+    ],
+    "lnp64_m16_backing_e": [
+      "LNP64_M16_BACKING_THREAD=8'd1",
+      "LNP64_M16_BACKING_MEMORY=8'd2",
+      "LNP64_M16_BACKING_REGISTER=8'd3"
+    ],
     "lnp64_m10_ras_op_e": [
       "LNP64_M10_COMMIT_BOOT_MEASURE=8'd1",
       "LNP64_M10_COMMIT_ECC_CORRECT=8'd2",
@@ -502,7 +519,9 @@
       "lnp64_m13_pcie_commit_t",
       "lnp64_m13_state_projection_t",
       "lnp64_m15_object_commit_t",
-      "lnp64_m15_state_projection_t"
+      "lnp64_m15_state_projection_t",
+      "lnp64_m16_endpoint_commit_t",
+      "lnp64_m16_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -539,6 +558,8 @@
     "lnp64_m13_state_projection_t": ["op:8", "status:16", "completions:32", "faults:32", "device_enumerated:1", "bar_capability_created:1", "iommu_bound_to_domain:1", "scoped_dma_completed:1", "msi_event_delivered:1", "unbound_bus_master_rejected:1", "stale_bar_rejected:1", "malformed_config_rejected:1", "no_raw_pcie_authority:1", "counts_exact:1"],
     "lnp64_m15_object_commit_t": ["op:8", "status:16", "object_id:32", "generation:32", "threshold:32", "payload:32", "event_generation:32", "continuation:32"],
     "lnp64_m15_state_projection_t": ["op:8", "status:16", "failures:32", "events:32", "counter_threshold_event:1", "queue_rights_valid:1", "queue_overflow_explicit:1", "event_source_generation_safe:1", "gate_continuation_unique:1", "counts_exact:1"],
+    "lnp64_m16_endpoint_commit_t": ["op:8", "status:16", "endpoint_id:32", "endpoint_gen:32", "backing:8", "bytes_len:32", "caps_len:32", "depth:32", "capacity:32", "caps_resolved:32", "caps_installed:32", "sender_domain_id:32", "sender_domain_gen:32", "receiver_domain_id:32", "receiver_domain_gen:32"],
+    "lnp64_m16_state_projection_t": ["op:8", "status:16", "depth:32", "capacity:32", "failures:32", "events:32", "bounded_depth_le_capacity:1", "drain_bounded_by_capacity:1", "full_fails_closed:1", "empty_fails_closed:1", "oversize_fails_closed:1", "no_block_except_wait:1", "caps_resolve_sender_only:1", "caps_reject_out_of_range:1", "install_no_amplify:1", "framing_one_send_one_recv:1", "notify_raises_register_edge:1", "counts_exact:1"],
     "lnp64_m10_ras_commit_t": ["op:8", "status:16", "root_domain:32", "fault_count:32", "telemetry_reads:32", "audit_records:32", "quote_id:32", "reset_id:32"],
     "lnp64_m10_state_projection_t": ["op:8", "status:16", "fault_count:32", "telemetry_reads:32", "audit_records:32", "trace_writes:32", "trace_capacity:32", "boot_measured:1", "telemetry_fdr_present:1", "ecc_corrected:1", "parity_poison_faulted:1", "watchdog_timed_out:1", "local_reset_seen:1", "degraded_state:1", "telemetry_scoped:1", "telemetry_redacted:1", "trace_overflowed:1", "quote_measurement_bound:1", "quote_development_marked:1", "audit_recorded:1", "mls_denied:1", "debug_denied:1", "counts_exact:1"],
     "lnp64_m9_classifier_commit_t": ["op:8", "status:16", "program_id:32", "attachment_generation:32", "cycle_budget:32", "cycles_used:32", "queue_id:32", "mark:32"],
