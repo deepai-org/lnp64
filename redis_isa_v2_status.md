@@ -64,18 +64,35 @@ index:
 the FDR→GPR migration the static and dynamic forms are semantically the same.
 The ~10 unit tests and the legacy `src/asm.rs` `fdN` asm-syntax tests that
 encoded the old "n is the fd index" convention were updated to preload the
-operand GPR with the fd handle value. `cargo test` at baseline (469 pass /
-4 pre-existing unrelated failures).
+operand GPR with the fd handle value.
 
-## Known remaining inconsistency (not exercised by Redis)
+## FDR→GPR migration completed for all fd-handle instructions
 
-The migration is partial: the **other** static fd-taking instructions still
-treat their `FdReg` operand as an index — `ReadFd` (0x2d), `WriteFd` (0x57),
-`PreadFd`, `ReaddirFd`, `WaitableProbe`, `WaitOnFd`, `FdDup2`, `CallCap`,
-`Mmap`. Redis routes all socket I/O through `PULL`/`PUSH`/`AWAIT`, so it is
-unaffected, but for a coherent ISA these should also be migrated to GPR-value
-semantics (with the same test/asm-syntax follow-through). Owned by the active
-ISA-v2 migration; deferred to avoid a large blast radius on the shared worktree.
+The migration was finished so that **every** instruction whose operand is an
+fd *handle* resolves it from a GPR (read_reg + `decode_fd_value` /
+`checked_fd_index`), identical to the `*Dyn` twins:
+
+- `ReadFd` (0x2d), `WriteFd` (0x57), `CallCap` (0x2f), `Mmap` (0x6a),
+  `WaitableProbe` (0x6f) — the decodable, LLVM-emitted forms.
+- `PreadFd`, `PwriteFd`, `ReaddirFd`, `RewinddirFd`, `StatFd`, `UtimeFd`,
+  `FdSeek`, `FdClose`, `WaitOnFd` — static forms paired with existing `*Dyn`
+  twins.
+
+`Mmap`: an fd value that does not resolve to a file-backed fd produces an
+anonymous mapping (also fixes real anonymous `mmap` passing a `-1` sentinel,
+which previously indexed `fds[]` directly).
+
+**Intentionally left index/slot-based** (documented in code): `OpenFd` /
+`OpenDir` — the `dst` operand is an *output* slot to install into, not an
+input handle; the GPR-model equivalents are `OpenFdDyn` / `OpenDirDyn`. And
+`FdDup` / `FdDup2` — `dup2`'s target is a slot by definition; these have no
+`*Dyn` twin and no binary opcode (not LLVM-emitted), so a "handle value"
+interpretation of the destination is meaningless. Migrating them cleanly would
+require first defining `dup`-under-capabilities semantics.
+
+`cargo test`: 473 passed / 0 failed (the 4 previously-failing tests — stale
+after the `ARG_BASE=0x1900000` / `STACK_TOP=0x1800000` layout migration — were
+also fixed). Full Redis smoke test still passes end-to-end.
 
 ## Repro / verification harness
 
