@@ -69,7 +69,11 @@ def parse_enums(pkg_text: str) -> dict[str, list[str]]:
     )
     for match in pattern.finditer(pkg_text):
         entries: list[str] = []
-        for item in match.group("body").split(","):
+        # Strip `//` line comments before splitting: enum bodies may carry
+        # annotation comments (e.g. the ISA-v2 additions block in
+        # lnp64_opcode_e) that would otherwise merge into the next entry.
+        body = re.sub(r"//[^\n]*", "", match.group("body"))
+        for item in body.split(","):
             item = item.strip()
             if not item:
                 continue
