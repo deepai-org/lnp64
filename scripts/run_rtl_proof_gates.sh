@@ -131,6 +131,7 @@ lean_files=(
   formal/M14TransitionInvariantModel.lean
   formal/M15ObjectProfilesModel.lean
   formal/M15TransitionInvariantModel.lean
+  formal/M16EndpointModel.lean
   formal/MvsHwSwBridge.lean
   formal/FormalTheoremsModel.lean
 )
