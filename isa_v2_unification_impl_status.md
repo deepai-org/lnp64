@@ -140,21 +140,41 @@ The ungated software-completion lane (EP-C finite-timeout, EP-G
 SCM_RIGHTS-over-byte-fds, libc shims, F1/F2 dedup) touches emulator/compiler, not
 the RTL datapath, and proceeds regardless of the cosim outcome.
 
-## CLEAN-BUILD COSIM RESULT: RED — real RTL PC/exec-base bug (silicon #1)
+## CLEAN-BUILD COSIM: prior "RED — RTL PC/exec-base bug" hypothesis DISPROVEN
 
-Decisive re-run (wiped build dir + `LNP64_RTL_REUSE_BUILD=0`): `Vlnp64_top_program_tb`
-was **freshly rebuilt from committed source** (binary mtime confirms, not reused),
-yet `top_smoke.s` still spins on UNSUPPORTED (0xff) and never reaches EXIT. So it
-is **not** a stale cache — a real RTL datapath bug.
+The earlier "JAL link=0 vs 0x1008 / top_smoke spins on UNSUPPORTED" diagnosis was
+**wrong** (it conflated a stale reuse-build with the datapath, and top_smoke has
+no JAL at all). On a genuinely clean build (`LNP64_RTL_REUSE_BUILD=0`, wiped dir)
+`top_smoke.s` reaches EXIT and is byte-exact. Trace-driven re-investigation of the
+full per-program manifest found a *cluster* of distinct bugs, not one datapath
+fault. **30 of 35 flat_hex programs are now byte-exact green.**
 
-Root-cause signature (one cause): JAL at pc 0 writes link reg = **0** in RTL vs
-**0x1008** in the emulator (`FLAT_EXEC_BASE_ADDR 0x1000 + 8`); it's the real gpr
-value (final-regfile mismatch). The `flat_exec_addr` function is correct
-(`lnp64_core_tile.sv:562`) and JAL calls it (`:3245`), so the bug is downstream —
-the JAL link / regfile-commit / retire path not carrying the 0x1000 base. Entry
-point for the hunt: trace JAL at pc 0 through regfile-write + retire-commit.
+Fixed + committed (8b7086a), 11→26→30 green:
+1. `top_unsupported_opcode.hex` truncated word `ff000000` → top byte 0x00 (NOP),
+   not 0xff. Encode full `ff00000000000000` → both fail-closed at pc0. 
+2. Flat-exec heap/mmap base derived from image_end (0x11000) ≠ RTL fixture
+   windows. Added `FLAT_EXEC_HEAP_BASE`/`MMAP_BASE` (0x10f000/0x20e000) +
+   `set_flat_exec_allocation_bases`, pinned in `build_flat_exec_machine`. Fixes
+   `top_dma_revoke_stale`.
+3. RTL `flat_retire_result_value` had no JAL/JALR case → retire trace projected
+   pre-write link reg (0) not `flat_exec_addr(pc+1)`. Added the case (gpr
+   datapath was already correct). Fixes `top_link_register` — the real source of
+   the bogus "JAL link=0" report.
+4. `rewind_current_ip_for_block` rewound 4 in committed-exec but v2 instrs are
+   8-byte words → blocked-and-resumed instr (JOIN/FUTEX_WAIT) re-armed misaligned.
+   Rewind 8. Fixes `top_futex_wake`, `top_fork_child_exit`.
 
-Gating impact: the silicon ENTRY GATE (clean-build manifest cosim green) is RED →
-**EP-I and M16 RTL refinement stay blocked** until this is fixed. The SP/schema/
-smoke edits are confirmed correct and not the cause (reproduces on clean build).
-Ungated software lane continues (EP-C finite-timeout landed).
+Remaining 5 RED (each a distinct emulator↔RTL-synthetic semantic reconciliation,
+several needing a which-side-is-correct call):
+- `top_waitable_probe` + `top_await_ex` (same sig `[(2,8,0)]`): OBJECT_CTL creates
+  the event counter "ready" (value 1) in RTL but value 0 in the emulator, so
+  READ_FD drains 8 bytes (RTL) vs 0 (emulator). Likely one emulator-init fix.
+- `top_signal_self`: exit 1 (RTL) vs 0 (emulator) — signal-delivery exit semantics.
+- `top_pipe_static_push_pull`: exit 0 (RTL) vs 1 (emulator) — static-pipe semantics
+  (dynamic `top_pipe_push_pull` passes).
+- `top_exec_target`: file-based EXEC (`demos/exec_target.s`, WRITE_FD fd1) vs the
+  RTL's baked synthetic exec target. Needs a design decision on how the RTL
+  hardware models file-exec + exec'd-process stdout/fd inheritance.
+
+Gating impact: silicon ENTRY GATE (clean-build manifest cosim green) is **partially
+green (30/35)** → EP-I and M16 RTL refinement remain blocked on the last 5.
