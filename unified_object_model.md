@@ -59,24 +59,55 @@ This folds process/container/VM/sandbox/supervisor *and* the whole IPC/async sur
 one object table with one naming discipline. "Everything is a file" (Plan 9) upgraded to
 "everything is a typed, capability-safe object," with io_uring's "one wait."
 
-## 2. The objects (the taxonomy already in code)
+## 2. The objects: one type-system — `Backing × Producer`
 
-- **Domain** — the node: held caps + threads + an accounting budget. A "process",
-  "container", and "VM" differ only by which slots they populate; there is **no type tag**
-  and **no leaf-vs-interior variant** (those words are *descriptive* of populated slots).
-  [`domain_ctl` 0x4c; M14]
-- **Endpoint** — an object you message/wait over. Kinds/profiles already present or slated:
-  message-endpoint, pipe (`Queue`/`Pipe`), socket, **call-gate (3 modes)**, completion-
-  counter, timer, signal, futex, fd/file, child-exit, thread-exit, and the **ring** (the
-  one genuinely new profile, §10). [`OBJECT_CTL`/`ObjectProfile`]
-- **Threads** — the scheduling axis. **Not** objects, **not** domains (a domain holds zero
-  or more threads).
-- **Held caps** — address-space, endpoint handles, device/DMA authority, gates. **One
-  handle namespace**: the "capabilities are GPR handles" migration is dissolving the
-  separate FDR file into GPR-named handles; RTL should treat the 256 FDR slots as a *cached
-  view* of held caps, not an independent file (`isa_v2_design.md` §4.2/§8).
+Two object families, and the endpoint family is a strict **type-system**, not a profile
+grab-bag. The verbs operate only on endpoints; an endpoint's behavior is **entirely** its
+type.
+
+- **Domain** — the node: held caps + threads + an accounting budget. "Process",
+  "container", "VM" differ only by which slots they populate; **no type tag**, **no
+  leaf-vs-interior variant** (descriptive only). [`domain_ctl` 0x4c; M14]
+- **Threads** — the scheduling axis. **Not** objects, **not** domains.
+- **Held caps** — address-space, endpoint handles, device/DMA authority. **One handle
+  namespace**: the "capabilities are GPR handles" migration dissolves the separate FDR file
+  into GPR-named handles; RTL treats the 256 FDR slots as a *cached view* of held caps
+  (`isa_v2_design.md` §4.2/§8).
+- **Endpoint** — the *one* thing the verbs operate on. Its type is two orthogonal axes:
+
+  - **Backing — where a message rests, and who you rendezvous with:**
+    - **Thread** — *rendezvous*: `send` blocks until a consumer thread takes the message (or
+      migrates into a server). The **gate** is a Thread-backed endpoint; **sockets and files
+      are Thread-backed** (rendezvous with the driver/FS *domain*) — this is what keeps the
+      backing set at exactly three. [built: M2 gate continuation]
+    - **Memory** — *queue*: `send` enqueues into a fixed-depth buffer and **returns**
+      (fail-closed `EAGAIN` on full); `recv` dequeues (fail-closed on empty). Pipes **and the
+      "ring"** are Memory-backed endpoints — the ring is *not* a new mechanism (§10).
+      [built: `FdHandle::Endpoint` VecDeque]
+    - **Register** — *counter/word*: `send` updates a word (increment / set); `wait` blocks
+      on its value. Futexes, semaphores, eventfd are Register-backed. [built: `Counter`/
+      `EventCounter`]
+  - **Producer — who issues the `send`:** **software** (a domain) or **hardware** (a timer
+    fire, device IRQ, DMA-complete, or a callee posting a completion). *Every event is a
+    `send`* — a timer is just an endpoint whose producer is the clock. This axis is why
+    timers/IRQs/DMA are **not** a forgotten fourth category: they are hardware-issued sends
+    to a `{Thread|Memory|Register}`-backed endpoint.
+
+  Every legacy "profile" (socket, pipe, futex, signal, timer, completion-counter, ring,
+  child-exit, thread-exit) is a **software convention naming a point in `Backing ×
+  Producer`**, not a distinct object kind. A **waitset** is likewise just a Memory-backed
+  endpoint that other endpoints `send` readiness edges into (§3).
 
 ## 3. The verbs
+
+**The core invariant (freeze this sentence).** The ISA knows **only** how to rendezvous
+synchronously with an endpoint's **backing manager**, in **bounded time**. Whether the
+sender then *blocks until a consumer takes the message* is a property of the **backing**,
+not of the instruction: Thread → block till consumer; Memory → enqueue & return
+(fail-closed on full); Register → update & return. There are **no ring / SQE / async
+opcodes** — async is a *Memory-backed endpoint*, never an instruction. This is exactly why
+WCET stays deterministic: queue non-determinism is contained as a memory abstraction, not
+baked into instruction timing.
 
 - **`send(ep, msg=(bytes,caps))` / `recv(ep, buf)`** — message transfer; a message carries
   inline bytes *and* a capability-handle vector. Collapses `push`/`pull`(+`_dyn`)/
@@ -108,8 +139,16 @@ one object table with one naming discipline. "Everything is a file" (Plan 9) upg
 | `OBJECT_CTL` (factory/lifecycle) | create/socket/classify; `pipe`/socket/call-gate/counter profiles | **built** |
 | `cap_dup` / `cap_revoke` | cap-table lifecycle | **built** |
 
-~20 IPC/async opcodes → **4 verbs + the factory + 2 cap-table ops + the ring**. The
-mechanical static/`_dyn` dedup (frees 0x3b/0x3c/0x70/0x72, then 0x4e) is `isa_v2_change_list.md` §F.
+~20 IPC/async opcodes → **4 verbs (`send`/`recv`/`gate_call`/`wait`) + the `OBJECT_CTL`
+factory + 2 cap-table ops** — and **no ring/async opcodes** (the ring is a Memory-backed
+endpoint, §10; the reserved `ring_enter` 0x87 is dropped). The mechanical static/`_dyn`
+dedup (frees 0x3b/0x3c/0x70/0x72, then 0x4e) is `isa_v2_change_list.md` §F.
+
+**Deep core (the verb set is closed — do not add a fifth).** The fundamental ops are really
+**two**: `send` and `wait`. `recv` = `wait` + dequeue; `gate_call` = `send` to a
+Thread-backed endpoint carrying a one-shot reply Continuation Endpoint, then `wait` on it
+(the migrating gate is the hardware fast-path of that fusion). The four-verb surface is kept
+for ergonomics and POSIX intuition; nothing else belongs in the set.
 
 ## 4. Protection context vs scheduling context (the keystone)
 
@@ -127,15 +166,27 @@ attributes to the scheduling context (the client). This is already physical — 
 continuation (`lnp64_gate_continuation_t`) carries the scheduling-context marker across the
 hop.
 
-## 5. Gate modes & fault containment (built; M2)
+## 5. Completion = a `send` to a Continuation Endpoint (one mechanism, not three)
 
-- **sync (migrating, default):** the server is passive code+caps; the thread runs server
-  code **on the caller's budget/priority** (bandwidth/priority inheritance — avoids the
-  Mars-Pathfinder priority inversion). *Calling a service spends your own time, like a
-  function call.*
-- **async (dispatched):** completion is posted to a counter/endpoint; the server has its own
-  thread+budget; charged to the server. Use for cost isolation / background work.
-- **handoff:** the continuation is handed to a service routine.
+The gate (a Thread-backed endpoint) is the **primitive**: `gate_call` is a synchronous
+migrating rendezvous, running server code **on the caller's budget/priority**
+(bandwidth/priority inheritance — avoids the Mars-Pathfinder priority inversion; *calling a
+service spends your own time, like a function call*). A **completion** is *not* a separate
+mechanism — it is a `send` (by the callee or by hardware) to the call's **Continuation
+Endpoint**, and that endpoint's **backing** decides everything the old "gate modes" did:
+
+- Continuation backed by a **Thread** → wakes/dispatches a thread (the *dispatched* gate).
+- Continuation backed by a **Register** → increments a counter (the *async* gate — built as
+  the completion-counter).
+- Continuation backed by **Memory** → pushes a completion record into a queue (the
+  *completion ring*, §10).
+
+So `sync` / `async` / `handoff` / `dispatched` / `ring` collapse to **one** rule: *post to
+the Continuation Endpoint; its type decides whether you wake, count, or queue.* (`sync` is
+the degenerate case — the caller's own thread is the continuation, so it just returns.) This
+is exactly the M2 engine's `sync_roundtrip_ok` / `async_delivery_ok` / `handoff_delivery_ok`
+— three views of one "post to endpoint."
+
 - **Faults are contained:** a fault while migrated into the server converts the in-flight
   `gate_call` into a **failed return to the client** (`ESRVFAULT`-class); the client's
   thread/continuation is preserved — *a crashed RPC server returns an error; the caller
@@ -212,18 +263,36 @@ compositional-schedulability proof before any RTL freeze.
   hard proof frontier.
 - POSIX: `SCHED_OTHER→TIMESHARE`, `FIFO/RR→FIXED_PRIO`, `DEADLINE→RESERVATION`.
 
-## 10. The completion-ring (the one genuinely-new piece — frozen, proof-gated)
+## 10. The "ring" is a Memory-backed endpoint — **not** an ISA primitive
 
-The async face of the same verbs, **frozen in the ISA** (per decision) — not a second IPC
-ABI. A **ring is an endpoint** whose inbox is completion entries, so `wait` on a ring needs
-no new concept. An **SQE is a deferred verb**, a **CQE its result**; the SQE/CQE binary
-layout and fixed-depth ring are frozen. `ring_enter(ring_ep, n_submit, min_complete,
-timeout)` = `wait` generalized. **Capability-safe** because SQE cap fields are cap-table
-indices the engine resolves against the *submitter's* table (names-are-data); received caps
-are installed by the engine. **WCET-bounded:** fixed depth + bounded drain; RT paths bypass
-the ring via the synchronous migrating `gate_call`. A **proto already exists** — the
-async-gate **completion-counter**. Gated on the **bounded-ring WCET** + **ring
-capability-safety** proofs before any RTL freeze.
+**Resolved (the keystone decision).** The ISA gets **no** ring/SQE/CQE/`ring_enter`
+instructions; the reserved `ring_enter` 0x87 is **dropped**. An io_uring-style ring is
+simply a **Memory-backed endpoint** (§2): you `send` work-descriptors into it and `recv`/
+`wait` completions out, with the *same four verbs* every other endpoint uses. "SQE" and
+"CQE" become ordinary `(bytes, caps)` messages in that endpoint's fixed-depth queue.
+
+Why this is the clean and WCET-correct choice:
+
+- **No instruction-set sprawl.** The verb isn't encoded twice (inline vs ringed); you just
+  target a Memory-backed endpoint instead of a Thread-backed one. The endpoint *type* —
+  not a second opcode — selects buffered vs rendezvous.
+- **WCET stays deterministic.** Making the *ring* the primitive would bake unbounded queue
+  latency, allocation, and cache-thrash into the lowest level of the ISA — a queue is
+  non-deterministic in time. Making the **synchronous gate** the primitive bakes in
+  *bounded* time: rendezvous has no buffering and no hidden allocation. Throughput callers
+  who want io_uring semantics configure a Memory-backed endpoint; the ISA still does a fast,
+  **bounded** rendezvous with that endpoint's tail-pointer manager and returns. The async
+  sprawl is contained as a *memory abstraction*, never as instruction-set timing.
+- **Capability-safe for free.** Descriptor cap fields are cap-table handles the engine
+  resolves against the *submitter's* table (names-are-data); received caps install via the
+  engine — the same path every `send`/`recv` already uses.
+- **Already built.** The Memory backing is `FdHandle::Endpoint` (fixed-depth, fail-closed
+  `EAGAIN`); the Register backing (completion-counter) is the async-gate target. The "ring"
+  needs **no new mechanism** — only a documented queue/CQE message convention.
+
+Gate: the fixed-depth Memory-backed endpoint's bounded-latency + capability-safety proofs
+land before any RTL freeze (same E4 obligation, now stated over the Memory backing rather
+than a bespoke ring engine).
 
 ## 11. POSIX legality (the frozen subset still lowers cleanly)
 
@@ -238,7 +307,12 @@ A re-expression of existing semantics (the emulator already uses POSIX poll bits
 | `kill`/`raise` · `sigaction` · `sigreturn` · `sigprocmask` | `send(signal-ep)` · register upcall · `gate_return` · mask |
 | `pipe`/`socket`/`bind`/`listen`/`connect`/`accept`/sockopt | `OBJECT_CTL` (already implemented) |
 | `eventfd`/`timerfd`/`signalfd` | endpoint profiles; `send`/`recv`/`wait` |
-| io_uring | a ring endpoint — native |
+| io_uring | a **Memory-backed endpoint** (queue of `(bytes,caps)` messages) — no ring opcodes |
+
+Backing map: sockets/files = **Thread**-backed (rendezvous with the driver/FS domain);
+pipes/rings = **Memory**; futex/sema/eventfd = **Register**; timers/signals/IRQ/DMA = any
+backing with a **hardware** producer. Every POSIX object above is one point in `Backing ×
+Producer`.
 
 ## 12. What's actually LEFT (the deltas)
 
@@ -248,13 +322,27 @@ transitional frozen into RTL before its proof (live status: the impl-status trac
 - **Canonical naming + dedup** — `gate_call`/`gate_return` canonical; the four verbs;
   retire `call_cap`/`ret_cap`; static/`_dyn` Tier-1/2 collapse (change-list §F).
 - **Endpoint kind + `send`/`recv`/`wait` verbs** — in progress (tracker EP-A…EP-G).
-- **Completion-ring** (EP-E) + **its proofs** (EP-F: bounded-ring WCET + cap-safety — gate
+- **Memory-backed endpoint queue convention** (the "ring", EP-E) — a `(bytes,caps)`
+  message/CQE convention over the existing Memory backing, **no new opcodes** (drop the
+  reserved `ring_enter` 0x87); + its bounded-latency / cap-safety proofs (EP-F — gate
   before RTL).
 - **Signal-fold** — `kill`=`send`, `sigaction`=handler, `SIGRET`=`gate_return`; reuse the
   existing signal-frame/continuation stack + `signal_compatibility_ok`.
 - **Scheduler model** (§9) + the compositional-schedulability proof (gate before RTL).
 - **Cheap-leaf representation** (§8): sparse node + DDR-backed DDT + O(1) COW fork.
 - **Coq read/fetch permission** (the `design.md` §3.2 gap).
+
+## Resolved decisions (the three IPC redundancies — now closed)
+
+1. **One verb set, no ring opcodes.** The ISA has `send`/`recv`/`gate_call`/`wait` only;
+   the ring is a Memory-backed endpoint (§10). `ring_enter` 0x87 is dropped.
+2. **One completion mechanism.** sync/async/handoff/dispatched/ring = "post to the
+   Continuation Endpoint; its backing decides wake/count/queue" (§5).
+3. **One taxonomy.** Endpoints are `Backing {Thread, Memory, Register} × Producer
+   {software, hardware}` (§2); all legacy profiles are points in it.
+
+Organizing principle: **the synchronous gate is the primitive; everything async is a
+Memory- or Register-backed endpoint reached by the same bounded rendezvous.**
 
 ## Conscious grafts (named, not rediscovered)
 

@@ -6,8 +6,8 @@ layer, per the umbrella roadmap in `isa_v2_design.md` §7–§8.
 
 **Gating rule (from §7/§8).** Each feature lands oracle-first: emulator →
 proofs → compiler/toolchain → tests, and **nothing transitional is frozen into
-RTL before its proofs pass** (endpoints/ring need the bounded-ring WCET +
-ring-cap-safety proofs E4; domain scheduler/IPC tracks 2–3 stay deferred). Track 1
+RTL before its proofs pass** (the Memory-backed endpoint needs the bounded-latency +
+cap-safety proofs E4; domain scheduler/IPC tracks 2–3 stay deferred). Track 1
 domain unification is sanctioned to implement+freeze now.
 
 ## Phase 1 — v2 ISA core

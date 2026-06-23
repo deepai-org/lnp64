@@ -17,8 +17,9 @@ as the umbrella roadmap (§8) for the architectural unification layered on top o
 
 - [`unified_object_model.md`](unified_object_model.md) — the single design/thesis doc:
   process = Resource Domain **and** one endpoint object are one held-capability table;
-  fork/exec/clone as capability-sharing; `send`/`recv`/`gate_call`/`wait` over endpoints;
-  a frozen async completion-ring; names-are-data. (Merges the former
+  fork/exec/clone as capability-sharing; `send`/`recv`/`gate_call`/`wait` over endpoints
+  typed by `Backing × Producer` (the "ring" is a Memory-backed endpoint, **no opcode**);
+  names-are-data. (Merges the former
   `unified_domain_refactor.md` + `unified_endpoint_ipc.md`.) Live per-layer status +
   opcode slots: [`isa_v2_unification_impl_status.md`](isa_v2_unification_impl_status.md).
 
@@ -413,8 +414,10 @@ yet**; each is gated on its own proofs (see the companion docs' work items).
   behind their proofs.
 - **Phase 3 — unified endpoint IPC
   ([`unified_object_model.md`](unified_object_model.md)).** One endpoint object, one
-  `(bytes, caps)` message, four verbs `send`/`recv`/`call`/`wait`, and a frozen async
-  completion-ring. The `call` verb **is** Phase-2 track 3's migrating gate, so Phases
+  `(bytes, caps)` message, four verbs `send`/`recv`/`call`/`wait` over endpoints typed by
+  `Backing × Producer` — **no ring/async opcodes** (the ring is a Memory-backed endpoint;
+  completion = a `send` to a Continuation Endpoint). The `call` verb **is** Phase-2 track
+  3's migrating gate, so Phases
   2 and 3 converge on one mechanism rather than adding two.
 
 ### Forward-consistency reconciliation (what Phase 1 must not freeze shut)
@@ -438,6 +441,7 @@ pass, and never freeze a Phase-N representation the table above marks transition
 a way Phase N+1 cannot evolve without a silicon respin.** Phase 1 may *implement*
 FDR-as-file and the separate IPC/async opcodes — the emulator already does — but must
 not *freeze them into RTL as independent structures* before Phases 2–3 land, since
-both are slated to dissolve into the one endpoint/handle namespace. The new async
-ring (Phase 3) and the migrating call (Phase 2 track 3 = Phase 3 `call`) are frozen
-together, behind the bounded-ring WCET and ring capability-safety proofs.
+both are slated to dissolve into the one endpoint/handle namespace. Phase 3 adds **no
+ring/async opcodes** — the "ring" is a Memory-backed endpoint reached by the same four
+verbs — so the only IPC freeze is the migrating gate (Phase 2 track 3 = Phase 3 `call`)
+plus the Memory-backed endpoint, behind the bounded-latency + capability-safety proofs.
