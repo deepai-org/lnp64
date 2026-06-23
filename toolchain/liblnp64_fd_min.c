@@ -48,12 +48,27 @@ int creat(const char *path, mode_t mode) {
   return open(path, O_WRONLY | O_CREAT | O_TRUNC);
 }
 
+/* EP-H: route byte-fd I/O through the unified `recv`/`send` verbs. The message
+   descriptor { bytes_ptr, bytes_len, caps_ptr, caps_len } names no caps
+   (caps_len=0), so the engine's byte-fd recv/send path is identical to the
+   legacy read_fd/write_fd (pull/push). Purely additive: the legacy opcodes stay
+   live; only which verb the shim calls changes. */
 ssize_t read(int fd, void *buf, size_t len) {
-  return (long)__lnp_pull((lnp64_cap_t)fd, (lnp64_word_t)buf, len);
+  lnp64_word_t desc[4];
+  desc[0] = (lnp64_word_t)buf; /* bytes_ptr */
+  desc[1] = (lnp64_word_t)len; /* bytes_len (receive-buffer capacity) */
+  desc[2] = 0;                 /* caps_ptr  */
+  desc[3] = 0;                 /* caps_len  */
+  return (long)__lnp_recv((lnp64_cap_t)fd, (lnp64_word_t)desc);
 }
 
 ssize_t write(int fd, const void *buf, size_t len) {
-  return (long)__lnp_push((lnp64_cap_t)fd, (lnp64_word_t)buf, len);
+  lnp64_word_t desc[4];
+  desc[0] = (lnp64_word_t)buf; /* bytes_ptr */
+  desc[1] = (lnp64_word_t)len; /* bytes_len (payload length) */
+  desc[2] = 0;                 /* caps_ptr  */
+  desc[3] = 0;                 /* caps_len  */
+  return (long)__lnp_send((lnp64_cap_t)fd, (lnp64_word_t)desc);
 }
 
 off_t lseek(int fd, off_t offset, int whence) {

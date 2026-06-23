@@ -40,13 +40,49 @@ static lnp64_word_t lnp64_poll_timeout_word(int timeout) {
   return (lnp64_word_t)(unsigned int)timeout;
 }
 
-int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
-  int ready = 0;
+enum { LNP64_POLL_WAIT_MAX = 64 };
 
+int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   if (!fds && nfds != 0)
     return -1;
 
-  /* First non-blocking scan */
+  /* EP-H: route poll through the unified `wait` verb — a batched poll over a
+     24-byte { handle, events, revents } waitset. The verb scans readiness with
+     the same edge sources as the legacy per-fd await (identical revents) and
+     blocks natively on a non-zero timeout. Purely additive: the legacy await
+     opcode stays live; only which verb the shim calls changes. */
+  if (nfds <= LNP64_POLL_WAIT_MAX) {
+    lnp64_word_t entries[LNP64_POLL_WAIT_MAX * 3]; /* {handle,events,revents} */
+    lnp64_word_t waitset[2];
+    nfds_t map[LNP64_POLL_WAIT_MAX];
+    nfds_t valid = 0;
+    for (nfds_t i = 0; i < nfds; i++) {
+      lnp64_word_t events = (lnp64_word_t)(unsigned short)fds[i].events;
+      fds[i].revents = 0;
+      if (fds[i].fd < 0 || events == 0)
+        continue; /* skipped fds keep revents 0 and stay out of the waitset */
+      entries[valid * 3 + 0] = (lnp64_word_t)(unsigned long)fds[i].fd;
+      entries[valid * 3 + 1] = events;
+      entries[valid * 3 + 2] = 0;
+      map[valid] = i;
+      valid++;
+    }
+    waitset[0] = (lnp64_word_t)entries;
+    waitset[1] = (lnp64_word_t)valid;
+    (void)__lnp_wait((lnp64_word_t)waitset, lnp64_poll_timeout_word(timeout));
+    int ready = 0;
+    for (nfds_t k = 0; k < valid; k++) {
+      lnp64_word_t rv = entries[k * 3 + 2];
+      if (rv != 0) {
+        fds[map[k]].revents = (short)rv;
+        ready++;
+      }
+    }
+    return ready;
+  }
+
+  /* Fallback for pathologically large sets: legacy per-fd await loop. */
+  int ready = 0;
   for (nfds_t i = 0; i < nfds; i++) {
     lnp64_word_t events = (lnp64_word_t)(unsigned short)fds[i].events;
     fds[i].revents = 0;
@@ -63,8 +99,6 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   }
   if (ready > 0 || timeout == 0)
     return ready;
-
-  /* Blocking phase: sleep 1 tick (~10ms) and rescan all fds non-blocking. */
   for (;;) {
     __lnp_sleep_1tick();
     int n = 0;
@@ -162,40 +196,37 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
       maxevents < 0)
     return -1;
 
-  /* First pass: non-blocking scan of all registered fds (timeout=0)
-   * __lnp_await with timeout=0 returns revents mask (non-zero = ready) */
-  int ready = 0;
-  for (int i = 0; i < lnp64_epoll_count && ready < maxevents; i++) {
+  /* EP-H: route epoll_wait — Redis's readiness path — through the unified
+     `wait` verb. Build a waitset over the registered fds and let the verb scan
+     readiness (same edge sources as the legacy per-fd await) and block natively
+     on a non-zero timeout. Ready entries report their registered events/data,
+     matching the prior shim. Purely additive: the legacy await stays live. */
+  lnp64_word_t entries[LNP64_EPOLL_MAX * 3]; /* {handle,events,revents} */
+  lnp64_word_t waitset[2];
+  int idx[LNP64_EPOLL_MAX];
+  int valid = 0;
+  for (int i = 0; i < lnp64_epoll_count; i++) {
     lnp64_word_t mask = (lnp64_word_t)lnp64_epoll_events[i];
     if (mask == 0) continue;
-    lnp64_word_t revents = __lnp_await(
-        (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[i], mask, 0);
-    if (revents != 0 && (long)revents >= 0) {
-      events[ready].events = lnp64_epoll_events[i];
-      events[ready].data = lnp64_epoll_data[i];
+    entries[valid * 3 + 0] = (lnp64_word_t)(unsigned long)lnp64_epoll_fd[i];
+    entries[valid * 3 + 1] = mask;
+    entries[valid * 3 + 2] = 0;
+    idx[valid] = i;
+    valid++;
+  }
+  waitset[0] = (lnp64_word_t)entries;
+  waitset[1] = (lnp64_word_t)valid;
+  (void)__lnp_wait((lnp64_word_t)waitset, lnp64_poll_timeout_word(timeout));
+  int ready = 0;
+  for (int k = 0; k < valid && ready < maxevents; k++) {
+    lnp64_word_t rv = entries[k * 3 + 2];
+    if (rv != 0) {
+      events[ready].events = lnp64_epoll_events[idx[k]];
+      events[ready].data = lnp64_epoll_data[idx[k]];
       ready++;
     }
   }
-  if (ready > 0 || timeout == 0)
-    return ready;
-
-  /* Second pass: sleep 1 tick and rescan all fds non-blocking. */
-  for (;;) {
-    __lnp_sleep_1tick();
-    int n = 0;
-    for (int j = 0; j < lnp64_epoll_count && n < maxevents; j++) {
-      lnp64_word_t m = (lnp64_word_t)lnp64_epoll_events[j];
-      if (m == 0) continue;
-      lnp64_word_t rv = __lnp_await(
-          (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[j], m, 0);
-      if (rv != 0 && (long)rv >= 0) {
-        events[n].events = lnp64_epoll_events[j];
-        events[n].data = lnp64_epoll_data[j];
-        n++;
-      }
-    }
-    if (n > 0) return n;
-  }
+  return ready;
 }
 
 static int lnp64_kqueue_created;
