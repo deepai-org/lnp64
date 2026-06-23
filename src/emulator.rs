@@ -12201,6 +12201,55 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_verbs_run_end_to_end_as_a_program() {
+        // A full assembled program exercising the unified verbs through run():
+        // create a Memory-backed endpoint, send "hi", recv it back, verify bytes.
+        let program = Program::parse(
+            r#"
+            .data
+            desc: .zero 32
+            buf:  .zero 64
+            msg:  .string "hi"
+
+            .text
+              ENDPOINT_CREATE r2, r0
+              LI r11, -1
+              BEQ r2, r11, bad
+              LI r10, desc
+              LI r12, msg
+              ST [r10, 0], r12
+              LI r12, 2
+              ST [r10, 8], r12
+              ST [r10, 16], r0
+              ST [r10, 24], r0
+              SEND r3, r2, r10
+              LI r13, 2
+              BNE r3, r13, bad
+              LI r12, buf
+              ST [r10, 0], r12
+              LI r12, 64
+              ST [r10, 8], r12
+              RECV r5, r2, r10
+              BNE r5, r13, bad
+              LI r14, buf
+              LD.B r6, [r14, 0]
+              LI r7, 104
+              BNE r6, r7, bad
+              LD.B r6, [r14, 1]
+              LI r7, 105
+              BNE r6, r7, bad
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn empty_send_notifies_register_backed_endpoint() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
