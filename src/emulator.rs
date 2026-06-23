@@ -622,6 +622,9 @@ const WAITSET_ENTRY_SIZE: u64 = 24;
 const WAITSET_ENTRY_HANDLE: u64 = 0; // u64: endpoint handle value
 const WAITSET_ENTRY_EVENTS: u64 = 8; // u64: requested POSIX events mask
 const WAITSET_ENTRY_REVENTS: u64 = 16; // u64: returned revents (written back)
+/// `wait` timeout sentinel: block until an edge fires (no deadline). Any other
+/// non-zero value is a finite deadline in scheduler ticks; 0 is a poll.
+const WAIT_FOREVER: u64 = u64::MAX;
 
 impl PipeBuffer {
     fn can_push_bytes(&self, len: usize) -> bool {
@@ -1191,6 +1194,12 @@ pub struct Machine {
     ready: VecDeque<u64>,
     domain_parked: VecDeque<u64>,
     sleepers: Vec<(u64, u64)>,
+    // Finite-timeout `wait` deadlines: (tid, remaining ticks). Separate from
+    // `sleepers` so the `wait` verb's timed wakeup doesn't perturb `Sleep`.
+    wait_timers: Vec<(u64, u64)>,
+    // Threads whose `wait` timeout has elapsed — the re-executed `wait` reads
+    // this to return "0 ready / timed out" instead of re-parking forever.
+    wait_expired: std::collections::HashSet<u64>,
     alarms: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
@@ -1473,6 +1482,8 @@ impl Machine {
             ready,
             domain_parked: VecDeque::new(),
             sleepers: Vec::new(),
+            wait_timers: Vec::new(),
+            wait_expired: std::collections::HashSet::new(),
             alarms: Vec::new(),
             futex_waiters: HashMap::new(),
             thread_join_waiters: HashMap::new(),
@@ -1776,12 +1787,13 @@ impl Machine {
             }
             steps += 1;
             self.tick_sleepers();
+            self.tick_wait_timers();
             self.tick_alarms();
             self.tick_timers();
             self.poll_fd_waiters();
 
             let Some(tid) = self.ready.pop_front() else {
-                if self.sleepers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
+                if self.sleepers.is_empty() && self.wait_timers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
                 {
                     return Err("committed exec runqueue deadlock: no ready threads".to_string());
                 }
@@ -2423,16 +2435,17 @@ impl Machine {
             }
             steps += 1;
             self.tick_sleepers();
+            self.tick_wait_timers();
             self.tick_alarms();
             self.tick_timers();
             self.poll_fd_waiters();
 
             let Some(tid) = self.ready.pop_front() else {
-                if self.sleepers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
+                if self.sleepers.is_empty() && self.wait_timers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
                 {
                     return Err("hardware runqueue deadlock: no ready threads".to_string());
                 }
-                if !self.fd_waiters.is_empty() || !self.sleepers.is_empty() {
+                if !self.fd_waiters.is_empty() || !self.sleepers.is_empty() || !self.wait_timers.is_empty() {
                     thread::sleep(Duration::from_millis(10));
                 }
                 continue;
@@ -6688,10 +6701,14 @@ impl Machine {
     // non-zero timeout blocks until an edge fires.
     fn ep_wait(&mut self, result: Reg, waitset: u64, timeout: u64) -> Result<bool, String> {
         Self::ensure_result_reg_writable(result)?;
-        // Drop any waiters this thread parked on a prior execution of this wait
-        // (re-execution after wake), so they cannot accumulate across rewinds.
         let tid = self.current_tid;
+        // Was this re-execution triggered by the finite-timeout expiring? Consume
+        // the marker; if nothing is ready below we return "0 ready / timed out".
+        let timed_out = self.wait_expired.remove(&tid);
+        // Drop any waiters/timers this thread parked on a prior execution of this
+        // wait (re-execution after wake), so they cannot accumulate across rewinds.
         self.fd_waiters.retain(|w| w.tid != tid);
+        self.wait_timers.retain(|(t, _)| *t != tid);
 
         let entries_ptr = self.load_u64_offset(waitset, 0)?;
         let count = self.load_u64_offset(waitset, 8)?;
@@ -6721,17 +6738,24 @@ impl Machine {
             }
         }
 
-        if ready_count > 0 || timeout == 0 {
+        // Return now if an edge is ready, or this is a non-blocking poll
+        // (timeout == 0), or the finite timeout already elapsed (return 0).
+        if ready_count > 0 || timeout == 0 || timed_out {
             self.set_errno(0)?;
             self.complete_reg_ok(result, ready_count)?;
             return Ok(true);
         }
 
-        // Nothing ready and a blocking timeout: park on every edge source and
-        // re-execute `wait` (re-poll) when any of them fires.
+        // Nothing ready: park on every edge source and re-execute `wait`
+        // (re-poll) when any fires. A finite timeout (timeout != WAIT_FOREVER)
+        // also arms a deadline timer that wakes + times out the wait; an
+        // infinite timeout blocks until an edge.
         self.rewind_current_ip_for_block()?;
         for (fd, events) in to_park {
             self.push_fd_waiter(fd, events, None)?;
+        }
+        if timeout != WAIT_FOREVER {
+            self.wait_timers.push((tid, timeout));
         }
         self.ready.retain(|t| *t != tid);
         Ok(false)
@@ -10130,6 +10154,8 @@ impl Machine {
         self.ready.retain(|ready_tid| *ready_tid != tid);
         self.domain_parked.retain(|parked_tid| *parked_tid != tid);
         self.sleepers.retain(|(sleep_tid, _)| *sleep_tid != tid);
+        self.wait_timers.retain(|(wait_tid, _)| *wait_tid != tid);
+        self.wait_expired.remove(&tid);
         self.fd_waiters.retain(|waiter| waiter.tid != tid);
         for waiters in self.futex_waiters.values_mut() {
             waiters.retain(|waiter_tid| *waiter_tid != tid);
@@ -10155,6 +10181,11 @@ impl Machine {
     fn wake_thread(&mut self, tid: u64) {
         if self.threads.contains_key(&tid) && !self.ready.contains(&tid) {
             self.sleepers.retain(|(sleep_tid, _)| *sleep_tid != tid);
+            // Drop any stale finite-`wait` timer for an edge-woken thread so it
+            // can't fire a spurious timeout after the thread re-polls. (A timer
+            // that genuinely expired is already removed by tick_wait_timers,
+            // which sets wait_expired before waking.)
+            self.wait_timers.retain(|(wait_tid, _)| *wait_tid != tid);
             self.ready.push_back(tid);
         }
     }
@@ -10169,6 +10200,24 @@ impl Machine {
         }
         self.sleepers.retain(|(_, ticks)| *ticks != 0);
         for tid in woke {
+            self.wake_thread(tid);
+        }
+    }
+
+    /// Finite-timeout `wait`: decrement each parked wait's deadline; on expiry,
+    /// mark the thread timed-out and wake it so the re-executed `wait` returns
+    /// "0 ready / timed out" rather than re-parking.
+    fn tick_wait_timers(&mut self) {
+        let mut expired = Vec::new();
+        for (tid, ticks) in &mut self.wait_timers {
+            *ticks = ticks.saturating_sub(1);
+            if *ticks == 0 {
+                expired.push(*tid);
+            }
+        }
+        self.wait_timers.retain(|(_, ticks)| *ticks != 0);
+        for tid in expired {
+            self.wait_expired.insert(tid);
             self.wake_thread(tid);
         }
     }
@@ -12173,6 +12222,61 @@ mod tests {
         assert!(keep_ready);
         assert_eq!(machine.thread().unwrap().regs[7], 1);
         assert!(machine.fd_waiters.is_empty());
+    }
+
+    #[test]
+    fn wait_finite_timeout_expires_and_returns_zero() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(token, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = 2; // finite: 2 ticks
+
+        // Empty endpoint → wait parks with a 2-tick deadline.
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.wait_timers.len(), 1);
+        assert!(!machine.ready.contains(&1));
+
+        // Advance time: first tick doesn't expire; second does.
+        machine.tick_wait_timers();
+        assert!(!machine.wait_expired.contains(&1));
+        machine.tick_wait_timers();
+        assert!(machine.wait_expired.contains(&1));
+        assert!(machine.ready.contains(&1)); // woken by the deadline
+
+        // Re-execute: still nothing ready + timed out → returns 0 (no re-park).
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[7], 0);
+        assert!(machine.wait_timers.is_empty());
+        assert!(!machine.wait_expired.contains(&1));
+    }
+
+    #[test]
+    fn wait_forever_does_not_time_out() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.exec(Instr::EndpointCreate(Reg(2), Reg(0))).unwrap();
+        let token = machine.thread().unwrap().regs[2];
+        let waitset = ARG_BASE + 0x300;
+        let entries = ARG_BASE + 0x380;
+        write_waitset(&mut machine, waitset, entries, &[(token, POLLIN_MASK)]);
+        machine.thread_mut().unwrap().regs[5] = waitset;
+        machine.thread_mut().unwrap().regs[6] = u64::MAX; // WAIT_FOREVER
+
+        let keep_ready = machine.exec(Instr::Wait(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert!(!keep_ready);
+        assert!(machine.wait_timers.is_empty()); // no deadline armed
+        for _ in 0..100 {
+            machine.tick_wait_timers();
+        }
+        assert!(!machine.wait_expired.contains(&1)); // never times out
+        assert!(!machine.ready.contains(&1)); // still parked until an edge
     }
 
     #[test]
