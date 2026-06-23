@@ -6479,10 +6479,33 @@ impl Machine {
 
     fn ep_send(&mut self, result: Reg, ep_value: u64, desc: u64) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
-        match self.ep_send_inner(ep_value, desc) {
-            Ok(count) => self.complete_reg_ok(result, count)?,
-            Err(errno) => self.complete_reg_err(result, errno)?,
+        let fd = match self.decode_fd_value(ep_value) {
+            Ok(fd) => fd,
+            Err(errno) => {
+                self.complete_reg_err(result, errno)?;
+                return Ok(());
+            }
+        };
+        // Memory-backed endpoint: framed (bytes, caps) message into the queue.
+        if matches!(self.process()?.fds.get(fd), Some(FdHandle::Endpoint(_))) {
+            match self.ep_send_inner(ep_value, desc) {
+                Ok(count) => self.complete_reg_ok(result, count)?,
+                Err(errno) => self.complete_reg_err(result, errno)?,
+            }
+            return Ok(());
         }
+        // Backing-dispatch collapse (unified_object_model.md §3): for byte-fd
+        // (pipe/socket/file) and Register-backed (counter/eventfd) endpoints,
+        // `send` is the existing write — subsuming push/write_fd/futex_wake.
+        // Caps over non-endpoint backings (SCM_RIGHTS-style) are still TBD.
+        let bytes_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR)?;
+        let bytes_len = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN)?;
+        let caps_len = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN)?;
+        if caps_len != 0 {
+            self.complete_reg_err(result, 95)?; // ENOTSUP
+            return Ok(());
+        }
+        self.write_fd_index_to(result, fd, bytes_ptr, bytes_len as usize)?;
         Ok(())
     }
 
@@ -6534,9 +6557,36 @@ impl Machine {
 
     fn ep_recv(&mut self, result: Reg, ep_value: u64, desc: u64) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
-        match self.ep_recv_inner(ep_value, desc) {
-            Ok(count) => self.complete_reg_ok(result, count)?,
-            Err(errno) => self.complete_reg_err(result, errno)?,
+        let fd = match self.decode_fd_value(ep_value) {
+            Ok(fd) => fd,
+            Err(errno) => {
+                self.complete_reg_err(result, errno)?;
+                return Ok(());
+            }
+        };
+        // Memory-backed endpoint: dequeue one framed (bytes, caps) message.
+        if matches!(self.process()?.fds.get(fd), Some(FdHandle::Endpoint(_))) {
+            match self.ep_recv_inner(ep_value, desc) {
+                Ok(count) => self.complete_reg_ok(result, count)?,
+                Err(errno) => self.complete_reg_err(result, errno)?,
+            }
+            return Ok(());
+        }
+        // Backing-dispatch collapse: byte-fd / Register-backed `recv` is the
+        // existing read — subsuming pull/read_fd/eventfd-read/counter-read.
+        let buf_ptr = self.load_u64_offset(desc, MSG_DESC_BYTES_PTR)?;
+        let buf_cap = self.load_u64_offset(desc, MSG_DESC_BYTES_LEN)?;
+        let caps_len = self.load_u64_offset(desc, MSG_DESC_CAPS_LEN)?;
+        if caps_len != 0 {
+            self.complete_reg_err(result, 95)?; // ENOTSUP
+            return Ok(());
+        }
+        match self.read_fd_index(fd, buf_ptr, buf_cap as usize)? {
+            Some(count) => self.complete_reg_ok(result, count as u64)?,
+            None => {
+                let errno = self.process()?.errno;
+                self.complete_reg_err(result, errno)?;
+            }
         }
         Ok(())
     }
@@ -12099,6 +12149,64 @@ mod tests {
         assert!(keep_ready);
         assert_eq!(machine.thread().unwrap().regs[7], 1);
         assert!(machine.fd_waiters.is_empty());
+    }
+
+    #[test]
+    fn send_recv_collapse_over_byte_pipe() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (reader, writer) = create_pipe_pair(&mut machine, 3, 4);
+
+        let sd = ARG_BASE + 0x100;
+        let pay = ARG_BASE + 0x200;
+        machine.write_bytes(pay, b"hi").unwrap();
+        write_msg_desc(&mut machine, sd, pay, 2, 0, 0);
+        machine.thread_mut().unwrap().regs[2] = writer;
+        machine.thread_mut().unwrap().regs[4] = sd;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 2);
+
+        let rd = ARG_BASE + 0x300;
+        let buf = ARG_BASE + 0x400;
+        write_msg_desc(&mut machine, rd, buf, 16, 0, 0);
+        machine.thread_mut().unwrap().regs[5] = reader;
+        machine.thread_mut().unwrap().regs[6] = rd;
+        machine.exec(Instr::Recv(Reg(7), Reg(5), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 2);
+        assert_eq!(machine.read_bytes(buf, 2).unwrap(), b"hi".to_vec());
+    }
+
+    #[test]
+    fn send_recv_collapse_over_register_backed_counter() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let p = machine.process_mut().unwrap();
+            p.fds[5] = FdHandle::EventCounter {
+                value: Rc::new(RefCell::new(2)),
+                semaphore: false,
+            };
+            p.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let token = machine.fd_token(5).unwrap();
+
+        // send 8 bytes = add 5 to the counter (subsumes eventfd-write/futex_wake)
+        let sd = ARG_BASE + 0x100;
+        let pay = ARG_BASE + 0x200;
+        machine.store_u64(pay, 5).unwrap();
+        write_msg_desc(&mut machine, sd, pay, 8, 0, 0);
+        machine.thread_mut().unwrap().regs[2] = token;
+        machine.thread_mut().unwrap().regs[4] = sd;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 8);
+
+        // recv reads the counter word (2 + 5 = 7)
+        let rd = ARG_BASE + 0x300;
+        let buf = ARG_BASE + 0x400;
+        write_msg_desc(&mut machine, rd, buf, 8, 0, 0);
+        machine.thread_mut().unwrap().regs[6] = rd;
+        machine.exec(Instr::Recv(Reg(7), Reg(2), Reg(6))).unwrap();
+        assert_eq!(machine.load_u64(buf).unwrap(), 7);
     }
 
     #[test]
