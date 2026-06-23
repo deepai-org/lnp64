@@ -420,6 +420,7 @@ package lnp64_pkg;
         LNP64_ERR_EINVAL   = 16'd22,
         LNP64_ERR_ENOTSUP  = 16'd95,
         LNP64_ERR_EOVERFLOW= 16'd75,
+        LNP64_ERR_EMSGSIZE = 16'd90,
         LNP64_ERR_EREVOKED = 16'd122,
         LNP64_ERR_ECANCELED= 16'd125
     } lnp64_errno_e;
