@@ -6505,6 +6505,30 @@ impl Machine {
             self.complete_reg_err(result, 95)?; // ENOTSUP
             return Ok(());
         }
+        // "Notify = empty message": an empty `send` to a Register-backed endpoint
+        // raises its edge by +1 (subsumes futex_wake / eventfd-notify), which the
+        // byte-write path would treat as a 0 addend. Software producers only.
+        if bytes_len == 0 {
+            let register = match self.process()?.fds.get(fd) {
+                Some(FdHandle::EventCounter { value, .. }) => Some(Rc::clone(value)),
+                Some(FdHandle::Counter(value)) => Some(Rc::clone(value)),
+                _ => None,
+            };
+            if let Some(value) = register {
+                if self.fd_right_errno(fd, CAP_RIGHT_WRITE).is_err() {
+                    self.complete_reg_err(result, 1)?; // EPERM — no write right
+                    return Ok(());
+                }
+                {
+                    let mut v = value.borrow_mut();
+                    *v = v.saturating_add(1);
+                }
+                self.poll_fd_waiters();
+                self.set_errno(0)?;
+                self.complete_reg_ok(result, 0)?;
+                return Ok(());
+            }
+        }
         self.write_fd_index_to(result, fd, bytes_ptr, bytes_len as usize)?;
         Ok(())
     }
@@ -12174,6 +12198,38 @@ mod tests {
         machine.exec(Instr::Recv(Reg(7), Reg(5), Reg(6))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[7], 2);
         assert_eq!(machine.read_bytes(buf, 2).unwrap(), b"hi".to_vec());
+    }
+
+    #[test]
+    fn empty_send_notifies_register_backed_endpoint() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let p = machine.process_mut().unwrap();
+            p.fds[5] = FdHandle::EventCounter {
+                value: Rc::new(RefCell::new(0)),
+                semaphore: false,
+            };
+            p.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let token = machine.fd_token(5).unwrap();
+        // empty message (bytes_len 0, caps_len 0) = notify → +1 (futex_wake/eventfd)
+        let sd = ARG_BASE + 0x100;
+        write_msg_desc(&mut machine, sd, 0, 0, 0, 0);
+        machine.thread_mut().unwrap().regs[2] = token;
+        machine.thread_mut().unwrap().regs[4] = sd;
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 0);
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::EventCounter { value, .. } => assert_eq!(*value.borrow(), 1),
+            _ => panic!("expected event counter"),
+        }
+        // a second notify accumulates the edge
+        machine.exec(Instr::Send(Reg(3), Reg(2), Reg(4))).unwrap();
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::EventCounter { value, .. } => assert_eq!(*value.borrow(), 2),
+            _ => panic!("expected event counter"),
+        }
     }
 
     #[test]

@@ -77,3 +77,7 @@ compositional-schedulability + WCET proofs before any RTL.
   table; out-of-range/revoked → none; install never amplifies). Recorded in
   `formal_theorems.md` §35. The M-series witness+checker+RTL refinement pipeline
   (like M15) is the remaining step before any RTL freeze.
+- EP-G refinement: "notify = empty message" — an empty `send` to a Register-backed
+  endpoint (EventCounter/Counter) raises its edge by +1, properly subsuming
+  futex_wake / eventfd-notify (the byte-write path would add a 0 addend). 1 test;
+  484 cargo pass.
