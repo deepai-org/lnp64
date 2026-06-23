@@ -186,5 +186,25 @@ LNP64 LLVM toolchain (not built in this environment) — independent of the flat
 cosim and not part of this gate.
 
 **Unblocked:** M16 endpoint typed-trace (M15 recipe) → EP-I RTL endpoint engine.
-Recommend running the full M-series RTL gate (docker) before further RTL freeze
-to confirm the `enc_slots`/SIGACTION/KILL edits regress nothing M1–M15.
+
+## M16 Step 0 — M1–M15 regression gate: GREEN
+
+All M1–M15 RTL witness/refinement gates pass (`run_rtl_m{1..15}_witness_gate.sh`
+/ `run_rtl_m1_refinement_gate.sh`, `LNP64_RTL_FAST=1`). The session's silicon
+edits (`enc_slots` padding, SIGACTION/KILL signal delivery) regress nothing —
+confirmed structurally too: no `m{N}_filelist.f` compiles `lnp64_core_tile.sv`
+(the M-series tbs exercise standalone engine modules), so those edits cannot
+affect M1–M15.
+
+Pre-existing breakage fixed en route (commit 65fca5f, from the sel.<cc> work
+e1d82e5/ec11a84, not this session): `check_rtl_shared_schema.py` now strips `//`
+comments in enum bodies, and the schema `lnp64_decode_t` gained `rs4/rs5` to
+match the pkg. (The "PermissionError" failures on first run were just a
+root-owned `build/` dir from prior docker runs; chowned, all green on re-run.)
+
+**Flagged, out of scope (pre-existing, NOT M-series, NOT this session):** the
+broader `run_rtl_proof_gates.sh` suite is red on `check_rtl_s0_contract.py` —
+S0 still expects legacy `LNP64_OP_LI32` (+ a stale `lnp64_decode_t` shape) that
+the ISA-v2 decode migration (9fca938) removed. Needs an ISA-contract decision;
+independent of M16. The M1–M15 *witness/refinement* gates (Step 0's scope) are
+all green.
