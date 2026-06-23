@@ -13,28 +13,46 @@
 
 From Coq Require Import Arith Lia.
 
-(* ---- Capabilities: an address range plus a write permission ---- *)
+(* ---- Capabilities: an address range plus read / write / execute (fetch)
+   permissions ---- *)
 
-Record Cap := { lo : nat; hi : nat; w : bool }.
+(* v2 (isa_v2_design.md S3.2/S5): a capability carries read (`r`) and
+   fetch/execute (`x`) permission alongside write (`w`), so PC-relative literal
+   loads (`AUIPC`+`LD`) and instruction fetch are covered by the same
+   confinement argument as writes -- no program-counter capability is added. *)
+Record Cap := { lo : nat; hi : nat; w : bool; r : bool; x : bool }.
 
 Definition inRange (a : nat) (c : Cap) : Prop := lo c <= a /\ a <= hi c.
 
 (* A capability c1 is a subset of c2 when it authorizes no address c2 does not
-   and carries no more permission. (Authorization-based, so the empty capability
-   is a subset of every capability -- the right semantics for revoke/derive.) *)
+   and carries no more permission of ANY kind (read/write/execute monotone).
+   (Authorization-based, so the empty capability is a subset of every capability
+   -- the right semantics for revoke/derive.) *)
 Definition capSubset (c1 c2 : Cap) : Prop :=
-  (forall a, inRange a c1 -> inRange a c2) /\ (w c1 = true -> w c2 = true).
+  (forall a, inRange a c1 -> inRange a c2)
+  /\ (w c1 = true -> w c2 = true)
+  /\ (r c1 = true -> r c2 = true)
+  /\ (x c1 = true -> x c2 = true).
 
 Lemma capSubset_refl : forall c, capSubset c c.
-Proof. intro c. unfold capSubset. split; auto. Qed.
+Proof.
+  intro c. unfold capSubset.
+  refine (conj _ (conj _ (conj _ _))).
+  - intros a H; exact H.
+  - intro H; exact H.
+  - intro H; exact H.
+  - intro H; exact H.
+Qed.
 
 Lemma capSubset_trans : forall a b c,
   capSubset a b -> capSubset b c -> capSubset a c.
 Proof.
-  intros a b c [Hr1 Hw1] [Hr2 Hw2].
-  unfold capSubset. split.
-  - intros x Hx. apply Hr2, Hr1, Hx.
+  intros a b c [Hrange1 [Hw1 [Hr1 Hx1]]] [Hrange2 [Hw2 [Hr2 Hx2]]].
+  unfold capSubset. refine (conj _ (conj _ (conj _ _))).
+  - intros y Hy. apply Hrange2, Hrange1, Hy.
   - intro Ha. apply Hw2, Hw1, Ha.
+  - intro Ha. apply Hr2, Hr1, Ha.
+  - intro Ha. apply Hx2, Hx1, Ha.
 Qed.
 
 (* A subset capability authorizes no address its parent does not. *)
@@ -62,7 +80,8 @@ Inductive Op :=
 | OpRevoke (i : nat)
 | OpNop.
 
-Definition emptyCap : Cap := {| lo := 1; hi := 0; w := false |}.  (* lo>hi: empty *)
+Definition emptyCap : Cap :=
+  {| lo := 1; hi := 0; w := false; r := false; x := false |}.  (* lo>hi: empty *)
 
 Definition upd_cap (f : nat -> Cap) (i : nat) (c : Cap) : nat -> Cap :=
   fun j => if Nat.eqb j i then c else f j.
@@ -152,8 +171,11 @@ Proof.
   - (* StepRevoke: empty cap is a subset of anything; mem unchanged *)
     split.
     + intro j. destruct (Nat.eq_dec j i) as [->|Hne].
-      * simpl. rewrite upd_cap_same. split.
-        -- intros x Hx. unfold inRange, emptyCap in Hx. simpl in Hx. lia.
+      * simpl. rewrite upd_cap_same.
+        refine (conj _ (conj _ (conj _ _))).
+        -- intros y Hy. unfold inRange, emptyCap in Hy. simpl in Hy. lia.
+        -- intro Hc. unfold emptyCap in Hc. simpl in Hc. discriminate.
+        -- intro Hc. unfold emptyCap in Hc. simpl in Hc. discriminate.
         -- intro Hc. unfold emptyCap in Hc. simpl in Hc. discriminate.
       * simpl. rewrite upd_cap_other by assumption. apply Hcap.
     + exact Hmem.
@@ -198,6 +220,52 @@ Proof.
   - intro Hin1.
     pose proof (writes_confined_to_root s a 1 v Hr He) as Hin1'.
     apply (Hdisj a Hin1 Hin1').
+Qed.
+
+(* ---- Read / fetch authority is root-confined (v2 isa_v2_design.md S3.2/S5) ----
+
+   The §5 formal delta asks the capability model to cover read and instruction
+   fetch (PC-relative literal loads, `AUIPC`+`LD`) the same way it covers writes,
+   WITHOUT adding a program-counter capability. With read/fetch permission now in
+   the capability and monotone under derive (capSubset), that confinement is a
+   direct consequence of no-forged-authority -- no new machine state needed. *)
+
+Definition authorizedRead (s : State) (i a : nat) : Prop :=
+  r (cap s i) = true /\ inRange a (cap s i).
+
+Definition authorizedFetch (s : State) (i a : nat) : Prop :=
+  x (cap s i) = true /\ inRange a (cap s i).
+
+(* Any read the holder is authorized to perform lies within its kernel-granted
+   root, and that root grants read -- read authority is unforgeable and confined. *)
+Theorem reads_confined_to_root : forall s i a,
+  Reachable s -> authorizedRead s i a -> r (root i) = true /\ inRange a (root i).
+Proof.
+  intros s i a Hreach [Hrd Hin].
+  destruct (no_forged_authority s i Hreach) as [Hrange [_ [Hrr _]]].
+  split; [ exact (Hrr Hrd) | exact (Hrange a Hin) ].
+Qed.
+
+(* Likewise for instruction fetch / PC-relative literal loads. *)
+Theorem fetches_confined_to_root : forall s i a,
+  Reachable s -> authorizedFetch s i a -> x (root i) = true /\ inRange a (root i).
+Proof.
+  intros s i a Hreach [Hxe Hin].
+  destruct (no_forged_authority s i Hreach) as [Hrange [_ [_ Hxx]]].
+  split; [ exact (Hxx Hxe) | exact (Hrange a Hin) ].
+Qed.
+
+(* W^X preservation: if a root never grants write and execute together, no
+   reachable derived capability does either -- monotone narrowing cannot mint a
+   writable+executable region the kernel did not grant. *)
+Theorem wx_preserved : forall s i,
+  Reachable s ->
+  ~ (w (root i) = true /\ x (root i) = true) ->
+  ~ (w (cap s i) = true /\ x (cap s i) = true).
+Proof.
+  intros s i Hreach Hroot [Hw_ Hx_].
+  destruct (no_forged_authority s i Hreach) as [_ [Hww [_ Hxx]]].
+  apply Hroot. split; [ exact (Hww Hw_) | exact (Hxx Hx_) ].
 Qed.
 
 End CapMachine.

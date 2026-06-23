@@ -45,18 +45,25 @@ Qed.
 (* Hardware checks a bounds subset (decidable); it implies the abstract
    authorization-based subset. *)
 Definition capSubsetb (c1 c2 : Cap) : bool :=
-  (lo c2 <=? lo c1) && (hi c1 <=? hi c2) && (negb (w c1) || w c2).
+  (lo c2 <=? lo c1) && (hi c1 <=? hi c2)
+  && (negb (w c1) || w c2) && (negb (r c1) || r c2) && (negb (x c1) || x c2).
 
 Lemma capSubsetb_sound : forall c1 c2,
   capSubsetb c1 c2 = true -> capSubset c1 c2.
 Proof.
   intros c1 c2 H. unfold capSubsetb in H.
   rewrite !andb_true_iff, !Nat.leb_le in H.
-  destruct H as [[Hlo Hhi] Hw].
-  unfold capSubset. split.
+  destruct H as [[[[Hlo Hhi] Hw] Hr] Hx].
+  unfold capSubset. refine (conj _ (conj _ (conj _ _))).
   - intros a [Ha1 Ha2]. unfold inRange. lia.
   - intro Hw1. apply orb_true_iff in Hw. destruct Hw as [Hn | Hy].
     + rewrite Hw1 in Hn. discriminate.
+    + exact Hy.
+  - intro Hr1. apply orb_true_iff in Hr. destruct Hr as [Hn | Hy].
+    + rewrite Hr1 in Hn. discriminate.
+    + exact Hy.
+  - intro Hx1. apply orb_true_iff in Hx. destruct Hx as [Hn | Hy].
+    + rewrite Hx1 in Hn. discriminate.
     + exact Hy.
 Qed.
 

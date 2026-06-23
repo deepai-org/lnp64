@@ -81,3 +81,13 @@ compositional-schedulability + WCET proofs before any RTL.
   endpoint (EventCounter/Counter) raises its edge by +1, properly subsuming
   futex_wake / eventfd-notify (the byte-write path would add a 0 addend). 1 test;
   484 cargo pass.
+
+## Cross-cutting (design.md §3.2/§5 formal gaps)
+- **Coq read/fetch permission — done.** `proofs/coq/CapSpec.v` capability extended
+  from write-only `{lo,hi,w}` to `{lo,hi,w,r,x}`, monotone under derive
+  (`capSubset` covers all three perms). New kernel-checked theorems:
+  `reads_confined_to_root`, `fetches_confined_to_root` (PC-relative literal loads
+  / instruction fetch are root-confined and unforgeable, with **no PCC register**),
+  and `wx_preserved` (monotone narrowing cannot mint a W+X region). `CapImpl.v`
+  refinement updated to match. Full coq gate green in `lnp64-coq-koika`
+  (coqc + coqchk, **axioms <none>**).
