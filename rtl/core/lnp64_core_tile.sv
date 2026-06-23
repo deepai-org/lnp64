@@ -167,8 +167,12 @@ module lnp64_core_tile #(
     localparam logic [63:0] MMAP_ARCH_BASE = 64'h0000_0000_0020_e000;
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
-    localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
-    localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_0000;
+    // Flat-exec stack window. The initial sp mirrors the emulator's
+    // STACK_TOP (src/isa.rs = 0x1800000) minus the fixed 0xE000 entry/call-frame
+    // reservation; the SRAM window base sits 0x2000 below sp (sp grows down).
+    // These MUST track src/isa.rs STACK_TOP -- the cosim compares r31 directly.
+    localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_017f_2000;
+    localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_017f_0000;
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd16384;
     localparam logic [63:0] FLAT_EXEC_DOMAIN_BASELINE_BYTES = 64'h0000_0000_0042_3000;
     localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd0;
