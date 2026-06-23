@@ -24,8 +24,8 @@ Redis 7 boots & serves on the emulator; full FDR→GPR fd-handle migration compl
 | EP-D `gate_call`/`gate_return` = the cross-domain migrating gate | emulator | **built + M2-proven** (existing 0x2f) |
 | EP-E "ring" = a **Memory-backed endpoint** — **no opcode** (refined §3); submit/reap via `send`/`recv`, poll via `wait` | emulator | **subsumed by EP-A** |
 | EP-F bounded Memory-backed-endpoint latency + cap-safety proofs (**gate before RTL**) | formal | **done + promoted to M16** (Lean `formal/EPEndpointModel.lean` → full M16 witness/refinement pipeline: schema→pkg→RTL→checker→witness→Lean, all green) |
-| EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | **done** (byte-fd + Register via write/read delegation; SCM_RIGHTS caps over byte fds TBD) |
-| EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | **backend done** (`.td` SEND/RECV/WAIT/ENDPOINT_CREATE + SDNodes + `LowerCall` shims for `__lnp_send/recv/wait/endpoint_create`); libc shim rewrites TBD; validating in docker |
+| EP-G the **full collapse**: `send`/`recv` dispatch over all backings (Memory/Register/Thread) to subsume push/pull/cap_send/cap_recv/read_fd/write_fd/futex_wake | emulator | **done** (byte-fd + Register via write/read delegation; **SCM_RIGHTS caps over byte-fds landed** — `send`/`recv` carry caps over pipe/socket via the channel cap-FIFO, subsuming cap_send/cap_recv; commit 9cee1c0) |
+| EP-H LLVM `.td` verbs + thin libc shims (read→recv, write→send, poll→wait, …) | compiler | **done** (`.td` backend + libc shims rewritten: read→`__lnp_recv`, write→`__lnp_send`, poll/epoll_wait→`__lnp_wait`, purely additive; commit 2110c4e. **Redis rebuilt on the verb-routed sysroot runs end-to-end on the verbs** — full smoke PASSED) |
 | EP-I RTL endpoint/gate engine (only after EP-F) | rtl | **sanctioned to freeze** (M16 witness+Lean green; full M1–M16 gate green) |
 
 Opcode assignments: `send`=0x83, `recv`=0x84, `wait`=0x86, `endpoint_create`=0x88
@@ -235,3 +235,25 @@ gates green; cargo green; Redis unaffected (no Rust change). → **EP-I (RTL
 endpoint engine) is sanctioned to freeze.** Note: `EPEndpointModel.lean` is kept
 as the EP-F design proof; `M16EndpointModel.lean` is its witness/refinement
 promotion (same theorems, M16 namespace + packed-bit layout).
+
+## Software collapse — EP-G + EP-H DONE; F1/F2 unblocked
+
+The four verbs now subsume the legacy IPC/cap ops in the emulator **and**
+software runs on them:
+- **EP-G** (commit 9cee1c0): `send`/`recv` carry SCM_RIGHTS caps over
+  Thread-backed byte-fds (pipe/socket) via the channel capability FIFO —
+  resolve-against-sender, install-no-amplify, fail-closed — subsuming
+  cap_send/cap_recv. Test + cargo 489 + cosim 35/35 + Redis green.
+- **EP-H** (commit 2110c4e): libc `read`→`__lnp_recv`, `write`→`__lnp_send`,
+  `poll`/`epoll_wait`→`__lnp_wait`, **purely additive** (legacy pull/push/await
+  opcodes + handlers stay live). Fast equivalence gate green (write/read run-elf
+  exit=0; poll byte-identical old-vs-new), cosim 35/35, cargo 489. Redis
+  rebuilt on the verb-routed sysroot **runs end-to-end on the verbs** (full
+  smoke PASSED — PING/SET/GET/DEL/INCR/RPUSH/LRANGE/HSET/SADD/SISMEMBER/SMEMBERS/
+  KEYS).
+
+**F1/F2 (the ISA collapse) is now unblocked**: the verbs subsume everything and
+software (Redis) already runs on them, so the legacy `_dyn` twins
+(0x3b/0x3c/0x70/0x72), `call_cap` (0x4e→gate_call), and the legacy
+push/pull/read_fd/write_fd/cap_send/cap_recv/await*/waitable_probe* paths can be
+removed — each removal gated on Redis green + cosim byte-exact + M1–M16 green.
