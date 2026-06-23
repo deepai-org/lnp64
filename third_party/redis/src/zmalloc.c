@@ -190,7 +190,7 @@ static inline void *ztrycalloc_usable_internal(size_t size, size_t *usable) {
     /* Possible overflow, return NULL, so that the caller can panic or handle a failed allocation. */
     if (size >= SIZE_MAX/2) return NULL;
     void *ptr = calloc(1, MALLOC_MIN_SIZE(size)+PREFIX_SIZE);
-    if (ptr == NULL) return NULL;
+    if (ptr == NULL) { return NULL; }
 
 #ifdef HAVE_MALLOC_SIZE
     size = zmalloc_size(ptr);

@@ -35,6 +35,8 @@
 #include <sys/stat.h>
 #include <glob.h>
 #include <string.h>
+#include <unistd.h>
+
 
 /*-----------------------------------------------------------------------------
  * Config file name-value maps.

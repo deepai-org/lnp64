@@ -1000,7 +1000,7 @@ sds sdscatrepr(sds s, const char *p, size_t len) {
         case '\b': s = sdscatlen(s,"\\b",2); break;
         default:
             if (isprint(*p))
-                s = sdscatprintf(s,"%c",*p);
+                s = sdscatlen(s,p,1);
             else
                 s = sdscatprintf(s,"\\x%02x",(unsigned char)*p);
             break;
