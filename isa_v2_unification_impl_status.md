@@ -122,3 +122,20 @@ Net: the unified object model is implemented across emulator (oracle),
 assembler, LLVM backend, Lean + Coq proofs, and tests. What is *not* done is
 exactly what the design marks gated (RTL freeze) or deferred (scheduler), plus
 the cosmetic POSIX-shim/alias work (libc read→recv, kill→send spelling).
+
+## Silicon-track ENTRY GATE (non-negotiable before any RTL freeze)
+
+**Whole-program manifest RTL↔emulator cosim must be green on a CLEAN build**
+(`LNP64_RTL_REUSE_BUILD=0`, wiped build dir) before EP-I, M16 RTL refinement, or
+any unification RTL freeze. A reuse-build run after the sel/SP/unified-obj commits
+showed base-0 behaviour (JAL link-reg 0 vs emulator 0x1008) — the classic
+stale-reuse-build signature (committed `FLAT_EXEC_BASE_ADDR=0x1000` is correct).
+Decisive re-run is clean-build:
+- green ⇒ stale cache, RTL faithful, silicon path open → scope M16;
+- red ⇒ real RTL datapath PC/exec-base bug (root cause: the 0x1000 base) — that
+  becomes the #1 silicon item, a focused bug-hunt (trace JAL at pc 0 through
+  lnp64_core_tile.sv base handling), ahead of M16.
+
+The ungated software-completion lane (EP-C finite-timeout, EP-G
+SCM_RIGHTS-over-byte-fds, libc shims, F1/F2 dedup) touches emulator/compiler, not
+the RTL datapath, and proceeds regardless of the cosim outcome.
