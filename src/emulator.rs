@@ -12201,6 +12201,38 @@ mod tests {
     }
 
     #[test]
+    fn fork_fails_closed_at_domain_pid_limit_without_allocating() {
+        // unified_object_model.md §8: "fork-bomb safety for free" — child creation
+        // is charged to the domain's mandatory limit; exceeding it makes the clone
+        // fail closed (dst=-1) without allocating a new context.
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let base_usage = machine.domain_usage(ROOT_DOMAIN_ID).pids;
+        let base_procs = machine.processes.len();
+        let base_threads = machine.threads.len();
+        // Permit exactly one more pid in this domain.
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .limits
+            .pids = base_usage + 1;
+
+        // First fork fits the limit.
+        machine.exec(Instr::Fork(Reg(5))).unwrap();
+        assert_ne!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.processes.len(), base_procs + 1);
+
+        // Second fork would exceed the domain pid limit → fail closed, no new
+        // process or thread context allocated.
+        machine.exec(Instr::Fork(Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12); // ENOMEM
+        assert_eq!(machine.processes.len(), base_procs + 1);
+        assert_eq!(machine.threads.len(), base_threads + 1);
+    }
+
+    #[test]
     fn endpoint_verbs_run_end_to_end_as_a_program() {
         // A full assembled program exercising the unified verbs through run():
         // create a Memory-backed endpoint, send "hi", recv it back, verify bytes.
