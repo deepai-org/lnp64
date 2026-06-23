@@ -64,11 +64,10 @@ module lnp64_m16_endpoint (
     logic [31:0] register_edge;
     logic [31:0] delivered;          // running count of one-send/one-recv pairs
 
+    // Capacity is fixed (like M15's queue_capacity) so the fill/drain walk is
+    // structurally deterministic; the seed varies endpoint id and message size.
     function automatic logic [31:0] seeded_capacity(input logic [31:0] seed);
-        if (seed == 32'd0) begin
-            return 32'd2;
-        end
-        return {30'd0, seed[1:0]} + 32'd2;   // 2..5
+        return 32'd2;
     endfunction
 
     function automatic logic [31:0] seeded_endpoint_id(input logic [31:0] seed);
