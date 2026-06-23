@@ -18,6 +18,7 @@ create_ready_event_counter:
   BEQ r11, r29, bad
 
 probe_static_ready:
+  LI r4, 4
   WAITABLE_PROBE r12, fd4, r20
   BNE r12, r20, bad
 
@@ -31,10 +32,12 @@ drain_and_probe_empty:
   LI r13, 8
   READ_FD fd4, r12, r13
   BNE r1, r13, bad
+  LI r4, 4
   WAITABLE_PROBE r18, fd4, r20
   BNE r18, r0, bad
 
 probe_closed_fd_error:
+  LI r7, 7
   WAITABLE_PROBE r19, fd7, r20
   LI r1, -9
   BNE r19, r1, bad

@@ -23,6 +23,7 @@ create_ready_event_counter:
   BEQ r11, r29, bad
 
 probe_mode_ready:
+  LI r4, 4
   ST [r22, 0], r0
   ST [r22, 8], r20
   AWAIT_EX r12, fd4, r22
@@ -41,6 +42,7 @@ zero_timeout_dynamic_no_ready:
   BNE r17, r0, bad
 
 invalid_mode:
+  LI r4, 4
   LI r1, 99
   ST [r22, 0], r1
   ST [r22, 8], r20

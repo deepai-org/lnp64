@@ -459,7 +459,7 @@ module lnp64_core_tile #(
         input logic [4:0] rs2,
         input logic [4:0] rs3
     );
-        enc_slots = {opcode, rd, rs1, rs2, rs3, 31'd0};
+        enc_slots = {opcode, rd, rs1, rs2, rs3, 36'd0};
     endfunction
 
     // I-type: rd, rs1, imm32 at [45:14].
@@ -4057,22 +4057,23 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_SIGACTION: begin
+                                // SIGACTION installs a disposition and writes no
+                                // result GPR (matches the emulator oracle); the
+                                // signum operand register must survive so a
+                                // following KILL still sees it.
                                 if (gpr[dec.rd] == 64'd0 || gpr[dec.rd] >= SIGNAL_NUMBER_LIMIT) begin
-                                    gpr[2] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
                                 end else if (gpr[dec.rs1] == SIG_DFL_HANDLER) begin
                                     signal_handler_valid <= 1'b0;
                                     signal_handler_ignore <= 1'b0;
                                     signal_handler_signum <= 64'd0;
                                     signal_handler_pc <= 64'd0;
-                                    gpr[2] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     signal_handler_valid <= 1'b1;
                                     signal_handler_ignore <= gpr[dec.rs1] == SIG_IGN_HANDLER;
                                     signal_handler_signum <= gpr[dec.rd];
                                     signal_handler_pc <= gpr[dec.rs1];
-                                    gpr[2] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
@@ -4101,8 +4102,13 @@ module lnp64_core_tile #(
                                         !signal_handler_ignore) begin
                                         signal_frame_valid <= 1'b1;
                                         signal_saved_pc <= pc + 32'd1;
+                                        // The saved frame captures KILL's own
+                                        // result (r2 = 0 success) committed before
+                                        // delivery; the live r2 then carries the
+                                        // signum into the handler (emulator order:
+                                        // set_status_ok, push frame, regs[2]=signum).
                                         for (i = 0; i < 32; i = i + 1) begin
-                                            signal_saved_gpr[i] <= gpr[i];
+                                            signal_saved_gpr[i] <= (i == 2) ? 64'd0 : gpr[i];
                                         end
                                         // Signal entry invalidates any LR/SC reservation.
                                         reservation_valid <= 1'b0;
@@ -4280,14 +4286,13 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_EXEC: begin
                                 if (exec_path_is_demo_target(gpr[dec.rd])) begin
-                                    program_rom[0] <= enc_reg(8'h04, 5'd1);
-                                    program_rom[1] <= 32'h0001_0000;
-                                    program_rom[2] <= enc_ri(8'h01, 5'd2, 16'sd8);
-                                    program_rom[3] <= enc_rrr(8'h57, 5'd1, 5'd1, 5'd2);
-                                    program_rom[4] <= enc_reg(8'h3a, 5'd0);
-                                    program_rom[5] <= enc_reg(8'h00, 5'd0);
-                                    sram[DATA_SRAM_BASE_WORD] <= 64'h0a6b_6f20_6365_7865;
-                                    sram[DATA_SRAM_BASE_WORD + 1] <= 64'd0;
+                                    // Canonical baked cosim EXEC target. Must be
+                                    // byte-identical to the emulator's
+                                    // COSIM_EXEC_TARGET_SOURCE ("LI r1,42; EXIT r1")
+                                    // so the image-replace mechanism cosims exactly.
+                                    program_rom[0] <= enc_ri(8'ha0, 5'd1, 32'sd42);
+                                    program_rom[1] <= enc_reg(8'h3a, 5'd1);
+                                    program_rom[2] <= enc_reg(8'h00, 5'd0);
                                     for (i = 0; i < 32; i = i + 1) begin
                                         gpr[i] <= 64'd0;
                                     end

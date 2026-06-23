@@ -22,11 +22,13 @@ push_byte:
   LI r13, 1
   LI r1, 90
   ST.B [r12, 0], r1
+  LI r4, 4
   PUSH r14, fd4, r12, r13
   BNE r14, r13, bad
 
 pull_byte:
   LI r15, 88
+  LI r3, 3
   PULL r16, fd3, r15, r13
   BNE r16, r13, bad
   LD.B r17, [r15, 0]

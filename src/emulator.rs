@@ -72,6 +72,14 @@ const LNP64_STAT_RECORD_SIZE: usize = 120;
 const ROOT_DOMAIN_ID: u64 = 1;
 const COMMITTED_FLAT_TEXT_BASE: u64 = 0x1000;
 const COMMITTED_FLAT_PAGE_SIZE: usize = 4096;
+// Cosim EXEC fixture. In committed-exec/cosim mode, EXEC of this canonical path
+// resolves to a fixed baked image rather than reading the file from disk, so the
+// silicon image-replace mechanism stays under RTL<->emulator cosim while the
+// out-of-silicon file read (the thin path service) is elided. The RTL fixture
+// (rtl/core/lnp64_core_tile.sv exec_path_is_demo_target) bakes the byte-identical
+// program. The real file-based EXEC path is unchanged for real-ELF/integration.
+const COSIM_EXEC_TARGET_PATH: &str = "demos/exec_target.s";
+const COSIM_EXEC_TARGET_SOURCE: &str = ".text\n  LI r1, 42\n  EXIT r1\n";
 const FLAT_EXEC_DOMAIN_BASELINE_BYTES: u64 = 0x42_3000;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
@@ -3814,6 +3822,24 @@ impl Machine {
                 let envp = self.read_reg(envp_reg)?;
                 let args = self.collect_exec_args(&path, argv)?;
                 let env = self.collect_exec_env(envp)?;
+                // Cosim EXEC: resolve the canonical demo target to a baked image
+                // (RTL bakes the byte-identical program) instead of reading disk,
+                // keeping the silicon image-replace under cosim. Real file-based
+                // EXEC (below) is untouched for real-ELF/integration coverage.
+                if self.committed_exec_mode && path == COSIM_EXEC_TARGET_PATH {
+                    let program = Program::parse(COSIM_EXEC_TARGET_SOURCE)
+                        .map_err(|err| format!("baked cosim EXEC target parse failed: {err}"))?;
+                    let pid = self.thread()?.pid;
+                    let domain_id = self.current_domain_id()?;
+                    let aslr_enabled = self
+                        .domains
+                        .get(&domain_id)
+                        .map(|domain| domain.security.aslr_enabled)
+                        .unwrap_or(true);
+                    let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
+                    self.exec_committed_source_program(program, layout, &args, &env)?;
+                    return Ok(true);
+                }
                 let Some(source_path) = self.resolve_process_path_or_errno(&path)? else {
                     return Ok(true);
                 };
