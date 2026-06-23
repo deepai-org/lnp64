@@ -196,6 +196,7 @@ fn run() -> Result<(), String> {
                 Vec::new()
             };
             let mut machine = build_flat_exec_machine(&text, &data)?;
+            machine.set_record_retire_trace(true);
             let exit = machine.run_committed_exec()?;
             let regs = machine.last_exit_registers().ok_or_else(|| {
                 "flat exec finished without an exit register snapshot".to_string()

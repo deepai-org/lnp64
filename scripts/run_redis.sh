@@ -40,8 +40,8 @@ server_log="${tmpdir}/server.log"
   >"$server_log" 2>&1 &
 server_pid=$!
 
-# Wait for server to be ready (up to 600 s — LNP64 at -O0 takes ~5 min to init)
-for i in $(seq 1 600); do
+# Wait for server to be ready (up to 1800 s — LNP64 at -O0 takes ~20 min to init)
+for i in $(seq 1 1800); do
   if redis-cli -p "$port" PING 2>/dev/null | grep -q PONG; then
     break
   fi
@@ -54,7 +54,7 @@ for i in $(seq 1 600); do
 done
 
 if ! redis-cli -p "$port" PING 2>/dev/null | grep -q PONG; then
-  echo "FAIL: redis-server did not respond to PING within 600s. Log:"
+  echo "FAIL: redis-server did not respond to PING within 1800s. Log:"
   cat "$server_log" | tail -20
   kill "$server_pid" 2>/dev/null || true
   exit 1

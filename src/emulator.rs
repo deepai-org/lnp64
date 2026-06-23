@@ -1103,6 +1103,8 @@ struct Thread {
     signal_stack: Vec<SavedSignalContext>,
     signal_generation: u64,
     cap_call_stack: Vec<CallContinuation>,
+    // Per-thread LR/SC reservation address (ISA v2).
+    reservation_addr: Option<u64>,
 }
 
 impl Thread {
@@ -1121,6 +1123,7 @@ impl Thread {
             signal_stack: Vec::new(),
             signal_generation: 1,
             cap_call_stack: Vec::new(),
+            reservation_addr: None,
         }
     }
 }
@@ -1171,10 +1174,13 @@ pub struct Machine {
     last_exit_mem_checksum: Option<u64>,
     last_exit_errno: Option<u64>,
     committed_exec_retire_trace: Vec<CommittedExecRetireRecord>,
+    // When false (default), the per-instruction retire trace is not recorded.
+    // Whole-program `run-elf` workloads (e.g. Redis) retire billions of
+    // instructions and never consume the trace, so accumulating it would grow
+    // unbounded (observed ~80 GB before OOM). Only the flat-exec / RTL
+    // co-simulation paths that emit EMULATOR_RETIRE enable it.
+    record_retire_trace: bool,
     committed_exec_mode: bool,
-    // v2 LR/SC reservation address (per-machine; cleared on store to the
-    // reserved address and on context switch / trap).
-    reservation_addr: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1450,8 +1456,8 @@ impl Machine {
             last_exit_mem_checksum: None,
             last_exit_errno: None,
             committed_exec_retire_trace: Vec::new(),
+            record_retire_trace: false,
             committed_exec_mode: false,
-            reservation_addr: None,
         }
     }
 
@@ -1748,9 +1754,6 @@ impl Machine {
             if !self.threads.contains_key(&tid) {
                 continue;
             }
-            if self.current_tid != tid {
-                self.reservation_addr = None;
-            }
             self.current_tid = tid;
             if self.thread_domain_frozen(tid)? {
                 if !self.domain_parked.contains(&tid) {
@@ -1784,6 +1787,7 @@ impl Machine {
                 }
                 self.process_mut()?.errno = LNP64_ERR_ENOTSUP;
                 self.exit_current(0)?;
+                if self.record_retire_trace {
                 let regs = self.last_exit_regs.unwrap_or([0; GPR_COUNT]);
                 let errno = self.last_exit_errno.unwrap_or_default();
                 self.committed_exec_retire_trace
@@ -1809,6 +1813,7 @@ impl Machine {
                         event_id: 0,
                         fault_id: 1,
                     });
+                }
                 continue;
             }
             let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
@@ -1837,6 +1842,7 @@ impl Machine {
             {
                 continue;
             }
+            if self.record_retire_trace {
             let regs = self
                 .threads
                 .get(&tid)
@@ -1872,6 +1878,7 @@ impl Machine {
                     event_id: 0,
                     fault_id: 0,
                 });
+            }
         }
         Ok(self.last_exit)
     }
@@ -1890,6 +1897,13 @@ impl Machine {
 
     pub fn committed_exec_retire_trace(&self) -> &[CommittedExecRetireRecord] {
         &self.committed_exec_retire_trace
+    }
+
+    /// Enable per-instruction retire-trace recording. Off by default to avoid
+    /// unbounded growth on whole-program `run-elf` workloads; the flat-exec /
+    /// RTL co-simulation paths that emit EMULATOR_RETIRE call this first.
+    pub fn set_record_retire_trace(&mut self, enabled: bool) {
+        self.record_retire_trace = enabled;
     }
 
     pub fn current_errno(&self) -> Result<u64, String> {
@@ -2382,9 +2396,6 @@ impl Machine {
             if !self.threads.contains_key(&tid) {
                 continue;
             }
-            if self.current_tid != tid {
-                self.reservation_addr = None;
-            }
             self.current_tid = tid;
             if self.thread_domain_frozen(tid)? {
                 if !self.domain_parked.contains(&tid) {
@@ -2685,19 +2696,17 @@ impl Machine {
             Instr::LrD(dst, addr) => {
                 let addr = self.read_reg(addr)?;
                 let value = self.load_u64(addr)?;
-                self.reservation_addr = Some(addr);
+                self.thread_mut()?.reservation_addr = Some(addr);
                 self.write_alu_reg(dst, value)?;
             }
             Instr::ScD(dst, src, addr) => {
                 let addr = self.read_reg(addr)?;
                 let value = self.read_reg(src)?;
-                let success = self.reservation_addr == Some(addr);
-                if !success {
-                }
+                let success = self.thread()?.reservation_addr == Some(addr);
                 if success {
                     self.store_u64(addr, value)?;
                 }
-                self.reservation_addr = None;
+                self.thread_mut()?.reservation_addr = None;
                 self.write_alu_reg(dst, u64::from(!success))?;
             }
             Instr::Ld(dst, mem, width) => {
@@ -2719,9 +2728,9 @@ impl Machine {
             Instr::St(mem, src, width) => {
                 let addr = self.resolve_mem(mem)?;
                 self.store_width(addr, self.read_reg(src)?, width)?;
-                if let Some(reserved) = self.reservation_addr {
+                if let Some(reserved) = self.thread()?.reservation_addr {
                     if reserved == addr {
-                        self.reservation_addr = None;
+                        self.thread_mut()?.reservation_addr = None;
                     }
                 }
             }
@@ -4070,7 +4079,7 @@ impl Machine {
                 thread.ip = saved.ip;
                 thread.regs = saved.regs;
                 thread.signal_generation = thread.signal_generation.wrapping_add(1).max(1);
-                self.reservation_addr = None;
+                thread.reservation_addr = None;
             }
             Instr::FutexWait(addr_reg, expected_reg) => {
                 let addr = self.read_reg(addr_reg)?;
@@ -10135,7 +10144,7 @@ impl Machine {
                 thread.signal_stack.push(saved);
                 thread.regs[2] = signum;
                 thread.ip = handler;
-                self.reservation_addr = None;
+                thread.reservation_addr = None;
             }
             None => {
                 if signum != SIGCHLD {
@@ -16638,6 +16647,7 @@ mod tests {
         machine
             .commit_exec_descriptor_memory_image(&words, &prepared)
             .unwrap();
+        machine.record_retire_trace = true;
         let exit = machine.run_committed_exec().unwrap();
 
         assert_eq!(exit, 0);
@@ -16850,6 +16860,7 @@ mod tests {
         machine
             .commit_exec_descriptor_memory_image(&words, &prepared)
             .unwrap();
+        machine.record_retire_trace = true;
         let exit = machine.run_committed_exec().unwrap();
 
         assert_eq!(exit, 0);
