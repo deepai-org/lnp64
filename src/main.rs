@@ -987,6 +987,10 @@ fn build_flat_exec_machine(hex_words: &str, data: &[u8]) -> Result<Machine, Stri
     ];
     let mut machine = Machine::new(Program::parse(".text\n  NOP\n")?);
     machine.commit_exec_descriptor_memory_image(&descriptor_words, &prepared)?;
+    // Mirror the RTL top-program fixture's fixed heap/mmap windows so the
+    // per-program manifest cosim is byte-exact (the image-derived heap placement
+    // is correct for real ELF exec but does not match the RTL SRAM fixture).
+    machine.set_flat_exec_allocation_bases(isa::FLAT_EXEC_HEAP_BASE, isa::FLAT_EXEC_MMAP_BASE)?;
     Ok(machine)
 }
 

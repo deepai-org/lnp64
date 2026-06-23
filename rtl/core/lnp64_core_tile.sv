@@ -1551,6 +1551,13 @@ module lnp64_core_tile #(
                 LNP64_OP_AUIPC:
                     result = FLAT_EXEC_BASE_ADDR + {29'd0, pc, 3'd0} +
                         {{32{dec.imm[31]}}, dec.imm};
+                // v2: jal/jalr link rd = byte address of the fall-through
+                // instruction (flat_exec_addr(pc+1)); rd==0 writes nothing, so
+                // the retire projection reports 0 to match the gpr datapath.
+                LNP64_OP_JAL,
+                LNP64_OP_JALR:
+                    result = (dec.rd[4:0] != 5'd0) ?
+                        flat_exec_addr(pc + 32'd1) : 64'd0;
                 // v2: set-less-than into a GPR.
                 LNP64_OP_SLT:  result = {63'd0, ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2]))};
                 LNP64_OP_SLTU: result = {63'd0, (gpr[dec.rs1] < gpr[dec.rs2])};

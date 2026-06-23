@@ -11,6 +11,16 @@ pub const ARG_BASE: u64 = 0x1900_000;
 pub const ARG_SIZE: u64 = 0x20_000;
 pub const MEMORY_SIZE: usize = 32 * 1024 * 1024;
 
+// Flat-exec / top-level RTL program fixture allocation windows. These MIRROR the
+// fixed SRAM windows in rtl/core/lnp64_core_tile.sv (HEAP_ARCH_BASE /
+// MMAP_ARCH_BASE) and rtl/engines/lnp64_engine_shells.sv so the flat-exec
+// emulator (the cosim oracle) hands out the same heap/mmap addresses as the RTL
+// top-program fixture and the per-program manifest cosim is byte-exact. The
+// real-ELF runtime keeps HEAP_BASE/MMAP_BASE; these apply only to the flat-exec
+// fixture, whose layout is otherwise an arbitrary shared convention.
+pub const FLAT_EXEC_HEAP_BASE: u64 = 0x10_f000;
+pub const FLAT_EXEC_MMAP_BASE: u64 = 0x20_e000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Reg(pub usize);
 

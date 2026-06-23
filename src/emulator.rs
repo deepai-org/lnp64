@@ -1817,7 +1817,10 @@ impl Machine {
                 continue;
             }
             let pc = self.thread()?.ip as u64;
-            let raw_word = self.load_exec_u64(pc)?;
+            let raw_word = self.load_exec_u64(pc).map_err(|err| {
+                let context = self.fault_context(tid);
+                format!("{err} on instruction fetch at tid {tid} pc 0x{pc:x}{context}")
+            })?;
             let opcode = (raw_word >> 56) as u8;
             let operand_rd = ((raw_word >> 51) & 0x1f) as u64;
             let operand_rs1 = ((raw_word >> 46) & 0x1f) as u64;
@@ -1955,6 +1958,22 @@ impl Machine {
     /// RTL co-simulation paths that emit EMULATOR_RETIRE call this first.
     pub fn set_record_retire_trace(&mut self, enabled: bool) {
         self.record_retire_trace = enabled;
+    }
+
+    /// Pin the current process's heap/mmap allocation cursors to the flat-exec
+    /// fixture windows so the emulator oracle hands out the same addresses as
+    /// the RTL top-program fixture (rtl/core/lnp64_core_tile.sv HEAP_ARCH_BASE /
+    /// MMAP_ARCH_BASE). Used only by the flat-exec harness; the real-ELF exec
+    /// path keeps its image-derived heap placement.
+    pub fn set_flat_exec_allocation_bases(
+        &mut self,
+        heap_base: u64,
+        mmap_base: u64,
+    ) -> Result<(), String> {
+        let process = self.process_mut()?;
+        process.heap_next = heap_base;
+        process.mmap_next = mmap_base;
+        Ok(())
     }
 
     pub fn current_errno(&self) -> Result<u64, String> {
@@ -4424,7 +4443,10 @@ impl Machine {
     }
 
     fn rewind_current_ip_for_block(&mut self) -> Result<(), String> {
-        let rewind = if self.committed_exec_mode { 4 } else { 1 };
+        // Committed-exec instructions are fixed 8-byte words (decode returns
+        // pc + 8), so re-arming a blocked-and-resumed instruction must rewind a
+        // full word; the non-committed Program path indexes instructions by 1.
+        let rewind = if self.committed_exec_mode { 8 } else { 1 };
         let ip = self.thread()?.ip;
         self.thread_mut()?.ip = ip.saturating_sub(rewind);
         Ok(())
