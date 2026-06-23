@@ -2737,7 +2737,17 @@ impl Machine {
             Instr::Pull(result, fd, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
-                if fd.0 == MESSAGE_ENDPOINT_FD {
+                // ISA-v2: the fd operand is a GPR whose *value* is the fd handle
+                // (not a static fd-register index). Resolve it like PullDyn.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                let fd = match self.decode_fd_value(fd_value) {
+                    Ok(fd) => fd,
+                    Err(errno) => {
+                        self.complete_reg_err(result, errno)?;
+                        return Ok(true);
+                    }
+                };
+                if fd == MESSAGE_ENDPOINT_FD {
                     let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
                         self.rewind_current_ip_for_block()?;
                         self.ready.retain(|tid| *tid != self.current_tid);
@@ -2748,7 +2758,7 @@ impl Machine {
                 } else {
                     let addr = self.read_reg(buf)?;
                     let len = self.read_reg(len)? as usize;
-                    if let Some(count) = self.read_fd_index(fd.0, addr, len)? {
+                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
                         self.complete_reg_ok(result, count as u64)?;
                     } else {
                         let errno = self.process()?.errno;
@@ -2789,9 +2799,18 @@ impl Machine {
             Instr::Push(result, fd, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
+                let fd = match self.decode_fd_value(fd_value) {
+                    Ok(fd) => fd,
+                    Err(errno) => {
+                        self.complete_reg_err(result, errno)?;
+                        return Ok(true);
+                    }
+                };
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                self.write_fd_index_to(result, fd.0, addr, len)?;
+                self.write_fd_index_to(result, fd, addr, len)?;
             }
             Instr::PushDyn(result, fd_reg, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -2810,12 +2829,18 @@ impl Machine {
             }
             Instr::Await(result, fd, mask) => {
                 Self::ensure_result_reg_writable(result)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let mask = self.read_reg(mask)?;
-                let Some(ready) = self.await_fd_ready_or_error(result, fd.0, mask)? else {
+                let Some(fd) = self.checked_fd_index(fd_value)? else {
+                    self.complete_reg_err(result, 9)?;
+                    return Ok(true);
+                };
+                let Some(ready) = self.await_fd_ready_or_error(result, fd, mask)? else {
                     return Ok(true);
                 };
                 if !ready {
-                    self.push_fd_waiter(fd.0, mask, Some(result))?;
+                    self.push_fd_waiter(fd, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -2845,8 +2870,13 @@ impl Machine {
             }
             Instr::AwaitEx(result, fd, argblock) => {
                 Self::ensure_result_reg_writable(result)?;
+                // ISA-v2: fd operand is a GPR holding the fd handle value.
+                let fd_value = self.read_reg(Reg(fd.0))?;
                 let argblock = self.read_reg(argblock)?;
-                self.await_ex_index(result, fd.0, argblock)?;
+                match self.decode_fd_value(fd_value) {
+                    Ok(fd) => self.await_ex_index(result, fd, argblock)?,
+                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
+                };
             }
             Instr::AwaitExDyn(result, fd_reg, argblock) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -11496,14 +11526,11 @@ mod tests {
         machine.current_tid = 1;
         machine.process_mut().unwrap().inbox.push_back((10, 20));
         machine.set_errno(123).unwrap();
+        // ISA-v2: fd operand is a GPR holding the fd handle value.
+        machine.thread_mut().unwrap().regs[2] = MESSAGE_ENDPOINT_FD as u64;
 
         let keep_ready = machine
-            .exec(Instr::Pull(
-                Reg(5),
-                FdReg(MESSAGE_ENDPOINT_FD),
-                Reg(0),
-                Reg(0),
-            ))
+            .exec(Instr::Pull(Reg(5), FdReg(2), Reg(0), Reg(0)))
             .unwrap();
 
         assert!(keep_ready);
@@ -17466,8 +17493,9 @@ mod tests {
               BNE r9, r7, bad
 
               MSG_SEND r1, r6, r7
-              AWAIT r0, fd255, r0
-              PULL r10, fd255, r0, r0
+              LI r25, 255
+              AWAIT r0, fd25, r0
+              PULL r10, fd25, r0, r0
               MOV r11, r30
               BNE r10, r6, bad
               BNE r11, r7, bad
@@ -17487,10 +17515,12 @@ mod tests {
               ST [r18, 32], r19
               OBJECT_CTL r19, r18
               BNE r19, r0, bad
-              PUSH r19, fd4, r12, r13
+              LI r26, 4
+              PUSH r19, fd26, r12, r13
               LI r14, 2
               ALLOC r15, r14
-              PULL r19, fd3, r15, r14
+              LI r27, 3
+              PULL r19, fd27, r15, r14
               BNE r19, r14, bad
               LD.B r16, [r15, 0]
               LI r17, 104
@@ -19658,6 +19688,7 @@ mod tests {
         machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(pipe);
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[3] = 3;
 
         let keep_ready = machine
             .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
@@ -19784,6 +19815,7 @@ mod tests {
         create_pipe_pair(&mut machine, 3, 4);
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
         machine.thread_mut().unwrap().regs[2] = 0;
+        machine.thread_mut().unwrap().regs[3] = 3;
 
         let keep_ready = machine
             .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
@@ -19820,6 +19852,7 @@ mod tests {
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 3, 4);
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[3] = 3;
 
         let keep_ready = machine
             .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
@@ -20012,6 +20045,7 @@ mod tests {
         machine.store_u64(ARG_BASE, 0).unwrap();
         machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
         machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[3] = 3;
 
         machine
             .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
@@ -20044,6 +20078,7 @@ mod tests {
         machine.store_u64(ARG_BASE, 99).unwrap();
         machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
         machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[3] = 3;
 
         machine
             .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
@@ -20060,6 +20095,10 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        // ISA-v2: fd operands are GPRs holding the fd handle value. r7 names an
+        // unallocated fd (7); r10 names an out-of-range fd handle (FDR_COUNT).
+        machine.thread_mut().unwrap().regs[7] = 7;
+        machine.thread_mut().unwrap().regs[10] = FDR_COUNT as u64;
 
         let keep_ready = machine
             .exec(Instr::Await(Reg(5), FdReg(7), Reg(2)))
@@ -20070,7 +20109,7 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 9);
 
         let keep_ready = machine
-            .exec(Instr::Await(Reg(6), FdReg(FDR_COUNT), Reg(2)))
+            .exec(Instr::Await(Reg(6), FdReg(10), Reg(2)))
             .unwrap();
         assert!(keep_ready);
         assert!(machine.fd_waiters.is_empty());
@@ -20144,6 +20183,7 @@ mod tests {
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 3, 4);
         machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[3] = 3;
         machine.thread_mut().unwrap().regs[5] = 0xdead_beef;
 
         let keep_ready = machine
