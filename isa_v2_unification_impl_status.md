@@ -444,6 +444,23 @@ independently whenever, since the RTL verb byte path already covers them.
    lost. Keep send/recv single-form (memory descriptor). Reserve only if a future
    corpus row regresses materially — today's data says it won't. Do not re-propose.
 
+5. **M1 cap/queue refinement re-couples to the verb path (option a).** Retiring
+   cap_send/cap_recv/push/pull requires re-pointing the M1 top-level refinement
+   contract from those arch opcodes to the unified verbs. This is a
+   guarantee-**preserving relocation**, not a weakening: the M1 proof is
+   commit-based, so the RTL verb-with-caps/queue path must emit the **identical**
+   M1 commits (CAP_SEND/CAP_RECV/PUSH/PULL) under the **identical** safety
+   conditions; the re-pointed Lean transitions prove the **same** cap-authority /
+   queue-safety theorem (no relaxation); and `covered_real_instruction_ops` + the
+   checker's required `arch_opcode in top_text` + lean_step move to the verb path.
+   M1 stays green at every commit (never an unproven state). **Sub-fork guardrail:**
+   if a safety check was tied to the dedicated opcode's *decode* (not its commit)
+   and the verb path can't reproduce it without change, STOP and flag — do not
+   approximate it green. (Rejected: (b) keep them as M1-anchored micro-primitives —
+   opcodes stay in decode so the surface never shrinks + re-introduces two-ways-to-
+   say-one-thing; (c) defer — postpones the highest-value move. Both fail the
+   opcode-count/concept-unity metric.)
+
 ## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
 The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
