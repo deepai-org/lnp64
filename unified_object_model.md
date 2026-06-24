@@ -83,7 +83,10 @@ type.
     - **Memory** — *queue*: `send` enqueues into a fixed-depth buffer and **returns**
       (fail-closed `EAGAIN` on full); `recv` dequeues (fail-closed on empty). Pipes **and the
       "ring"** are Memory-backed endpoints — the ring is *not* a new mechanism (§10).
-      [built: `FdHandle::Endpoint` VecDeque]
+      [built: `FdHandle::Endpoint` VecDeque]. *RAM is the Memory backing too: a `LD`/`ST` is
+      the fast path of `recv`/`send` on a `memory_object`, and a page fault is the
+      Object-Backed Page Transaction (`design.md` §4) — see
+      [`unified_memory_model.md`](unified_memory_model.md).*
     - **Register** — *counter/word*: `send` updates a word (increment / set); `wait` blocks
       on its value. Futexes, semaphores, eventfd are Register-backed. [built: `Counter`/
       `EventCounter`]
