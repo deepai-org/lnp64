@@ -462,6 +462,20 @@ independently whenever, since the RTL verb byte path already covers them.
    say-one-thing; (c) defer — postpones the highest-value move. Both fail the
    opcode-count/concept-unity metric.)
 
+   **Acceptance criteria (verify explicitly, not emergently):**
+   - **Re-point ≠ remove — conserve coverage.** The subtle failure is making the
+     checker green by *deleting* a requirement instead of *moving* it. So the
+     `covered_real_instruction_ops` key count and the Lean cap/queue transition
+     theorem count must be **conserved or grow** across the re-coupling — never
+     net-decrease. If the diff drops a covered key or a Lean step without an
+     equivalent **verb-anchored** one appearing, the guardrail tripped *even if the
+     gate is green*. Check "covered-key count non-decreasing" by hand.
+   - **push/pull (0x2b/0x2c) is the KEYSTONE.** Retiring push/pull into send/recv on
+     a Memory-backed endpoint is the moment "the ring is a Memory-backed endpoint, no
+     opcodes" (Resolved #1) becomes *formally proven*, not a slogan — the highest
+     concept-unity moment in the effort. Own B1 row + a tracker note marking the
+     keystone resolved, not just a −2.
+
 ## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
 The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
