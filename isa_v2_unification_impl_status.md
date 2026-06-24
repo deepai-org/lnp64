@@ -414,25 +414,35 @@ Then step-3 becomes mechanical opcode removal. The byte-fd-only groups
 (push/pull via libc migration, read_fd/write_fd via demo migration) can be done
 independently whenever, since the RTL verb byte path already covers them.
 
+## Resolved decisions (locked — do not re-litigate)
+
+1. **Operand-sourcing is the only fork.** The unified verbs reuse existing
+   microcode (send→WRITE_FD, recv→READ_FD) with a `verb_form` operand mux; no new
+   execute arms, no new opcodes for the byte-fd path. (EP-I-lite.)
+2. **Verb result ABI = r2.** Byte-fd verbs return the transfer count in r2 (the v2
+   return-value reg), matching the static fd ABI so the RTL sequential write and
+   the retire trace agree. (EP-I-lite.)
+3. **caps + wait/endpoint deferred to EP-I-full.** `wait` (waitset) and cap-passing
+   are not pure operand-muxes of an existing arm, so they land with the M16
+   endpoint engine — which is also when the cap_send/cap_recv/await/await_ex/
+   waitable_probe opcodes retire. (EP-I-lite + step-3 feasibility finding.)
+4. **Register-form fast path REJECTED — trades unification for density.** A 1-bit
+   `form` field on send/recv (reg form `rd/rs1=fd/rs2=ptr/rs3=len` vs the memory
+   descriptor) was specced to recover descriptor-build code size, then rejected:
+   the B1 corpus measurement (Redis+libc verb migration **+0.034%, flat**) shows
+   there is no code-size problem to fix. The form bit would re-introduce an
+   encoding form (surface↑) to win back instructions the corpus shows we never
+   lost. Keep send/recv single-form (memory descriptor). Reserve only if a future
+   corpus row regresses materially — today's data says it won't. Do not re-propose.
+
 ## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
 The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
-direct hit on it. Order: step-3 sweep → EP-I-full freeze. Per the feasibility
-finding above, the caps/await/waitable opcodes retire *as part of* EP-I-full
-(that step adds the RTL wait + cap-FIFO verb paths they need); the byte-fd groups
-(push/pull, read_fd/write_fd) retire via emitter migration, independent of the
-freeze.
-
-### Rejected: register-form fast path for send/recv (do not re-propose)
-
-A 1-bit `form` field on send/recv (reg form `rd/rs1=fd/rs2=ptr/rs3=len` vs the
-memory descriptor) was specced to recover the descriptor-build code size.
-**Rejected** because the B1 corpus measurement settled the question it was meant to
-answer: the Redis+libc verb migration is **+0.034% (flat)** — there is no code-size
-problem to fix. The form bit trades unification for density: it re-introduces an
-encoding form (surface) to win back instructions the corpus shows we never lost.
-Not worth it. Keep send/recv single-form (memory descriptor). Reserve only if a
-future corpus row regresses materially — which today's data says it won't.
+direct hit on it. Order: step-3 sweep → EP-I-full freeze — no register-form slot
+(see Resolved decision #4). Per the feasibility finding above, the caps/await/
+waitable opcodes retire *as part of* EP-I-full (that step adds the RTL wait +
+cap-FIFO verb paths they need); the byte-fd groups (push/pull, read_fd/write_fd)
+retire via emitter migration, independent of the freeze.
 
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 
