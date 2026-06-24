@@ -2130,7 +2130,9 @@ impl Machine {
             0x28 => Instr::Jalr(a, b, imm_i),
             0x2b => Instr::Pull(a, FdReg(b.0), c, d),
             0x2c => Instr::Push(a, FdReg(b.0), c, d),
-            0x2d => Instr::ReadFd(FdReg(a.0), b, c),
+            // 0x2d (read_fd) retired in EP-I-full read_fd/write_fd sweep — recv
+            // over a byte-fd is the read; the READ_FD microcode stays (the verb
+            // decodes to it), only the static binary opcode + Instr surface go.
             0x2e => Instr::Await(a, FdReg(b.0), c),
             0x2f => Instr::CallCap(a, FdReg(b.0), c, d),
             0x30 => Instr::Ld(a, MemRef::BaseOffset(b, imm_i), Width::Double),
@@ -2163,7 +2165,8 @@ impl Machine {
             0x54 => Instr::GetPcr(a, pcr_operand((word >> 46) as u32 & 0x1f)?),
             0x55 => Instr::SetPcr(a, pcr_operand((word >> 46) as u32 & 0x1f)?, c),
             0x56 => Instr::EnvGet(a, b, c, d),
-            0x57 => Instr::WriteFd(FdReg(a.0), b, c),
+            // 0x57 (write_fd) retired in EP-I-full read_fd/write_fd sweep — send
+            // over a byte-fd is the write (WRITE_FD microcode stays for the verb).
             0x58 => Instr::OpenAtDyn(a, b, c, d),
             0x59 => Instr::CloneSpawn(a, b, c),
             0x5a => Instr::ThreadJoin(a, b, c),
@@ -3069,18 +3072,6 @@ impl Machine {
                     }
                 }
             }
-            Instr::ReadFd(fd, buf, len) => {
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                // ISA-v2: fd operand is a GPR holding the fd handle value.
-                let fd_value = self.read_reg(Reg(fd.0))?;
-                let addr = self.read_reg(buf)?;
-                let len = self.read_reg(len)? as usize;
-                if let Some(fd) = self.checked_fd_index(fd_value)? {
-                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
-                        self.complete_ok(count as u64)?;
-                    }
-                }
-            }
             Instr::PreadFd(fd, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 // ISA-v2: fd operand is a GPR holding the fd handle value.
@@ -3128,16 +3119,6 @@ impl Machine {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.rewinddir_fd_index(fd)?;
-                }
-            }
-            Instr::WriteFd(fd, buf, len) => {
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                // ISA-v2: fd operand is a GPR holding the fd handle value.
-                let fd_value = self.read_reg(Reg(fd.0))?;
-                let addr = self.read_reg(buf)?;
-                let len = self.read_reg(len)? as usize;
-                if let Some(fd) = self.checked_fd_index(fd_value)? {
-                    self.write_fd_index(fd, addr, len)?;
                 }
             }
             Instr::PwriteFd(fd, buf, len, offset) => {
@@ -5257,7 +5238,6 @@ impl Machine {
                     let imm = value_imm32(program, value)?;
                     vec![enc_i(0xa0, *rd, Reg(0), imm)]
                 }
-                Instr::WriteFd(fd, buf, len) => vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)],
                 Instr::Exit(src) => vec![enc_reg(0x3a, *src)],
                 other => {
                     return Err(format!(
@@ -18072,13 +18052,8 @@ mod tests {
         fs::write(
             &child_path,
             r#"
-            .data
-            msg: .string "exec ok\n"
-
             .text
-              LI r1, msg
-              LI r2, 8
-              WRITE_FD fd1, r1, r2
+              LI r1, 7
               EXIT r0
             "#,
         )
@@ -18494,6 +18469,8 @@ mod tests {
             pipe_msg: .string "hi"
             dup_msg: .string "!"
             obj_arg: .zero 64
+            descw: .zero 32
+            descr: .zero 32
 
             .text
               GET_PCR r1, PID
@@ -18570,8 +18547,18 @@ mod tests {
               LI r12, dup_msg
               LI r13, 1
               LI r28, 5          # fd handle for the dup target slot (5)
-              WRITE_FD fd28, r12, r13
-              READ_FD fd27, r15, r13    # r27 still holds 3 (pipe reader)
+              LI r24, descw
+              ST [r24, 0], r12
+              ST [r24, 8], r13
+              ST [r24, 16], r0
+              ST [r24, 24], r0
+              SEND r2, r28, r24         # send 1 byte over the dup'd writer fd5
+              LI r25, descr
+              ST [r25, 0], r15
+              ST [r25, 8], r13
+              ST [r25, 16], r0
+              ST [r25, 24], r0
+              RECV r2, r27, r25         # r27 still holds 3 (pipe reader)
               BNE r2, r13, bad
               LD.B r16, [r15, 0]
               LI r17, 33

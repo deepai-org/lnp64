@@ -1,4 +1,5 @@
 .data
+_epdesc: .zero 32
 ok_msg: .string "object profiles ok\n"
 obj: .zero 72
 pipe_msg: .string "Q"
@@ -53,11 +54,23 @@ create_event_counter:
   BEQ r11, r29, bad
   LI r12, event_val
   LI r13, 8
-  WRITE_FD fd5, r12, r13
+  LI r25, 5
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd5 -> send over byte-fd
   ERRNO_GET r18
   BNE r18, r0, bad
   LI r12, event_out
-  READ_FD fd5, r12, r13
+  LI r25, 5
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd5 -> recv over byte-fd
   BNE r1, r13, bad
   LD r19, [r12, 0]
   LI r20, 5
@@ -77,11 +90,23 @@ create_timer:
   BEQ r11, r29, bad
   LI r12, timer_ticks
   LI r13, 8
-  WRITE_FD fd6, r12, r13
+  LI r25, 6
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd6 -> send over byte-fd
   LI r21, 5
   SLEEP r21
   LI r12, timer_out
-  READ_FD fd6, r12, r13
+  LI r25, 6
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd6 -> recv over byte-fd
   BNE r1, r13, bad
   LD r22, [r12, 0]
   BLE r22, r0, bad
@@ -101,7 +126,13 @@ create_memory_object:
   BEQ r11, r29, bad
   LI r12, mem_msg
   LI r13, 1
-  WRITE_FD fd7, r12, r13
+  LI r25, 7
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd7 -> send over byte-fd
   BNE r1, r13, bad
 
 create_call_gate:
@@ -132,7 +163,13 @@ create_call_gate:
 done:
   LI r1, ok_msg
   LI r2, 19
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 service:

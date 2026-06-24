@@ -1,4 +1,5 @@
 .data
+_epdesc: .zero 32
 ok_msg: .string "revoked dma buffer ok\n"
 obj: .zero 64
 
@@ -59,7 +60,13 @@ dma_after_revoke:
 done:
   LI r1, ok_msg
   LI r2, 22
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:

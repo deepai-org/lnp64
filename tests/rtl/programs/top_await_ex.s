@@ -23,14 +23,19 @@ create_pipe_queue:
   OBJECT_CTL r11, r10
   BNE r11, r0, bad
 
-write_one_byte:
-  LI r3, 3                 # static-fd convention: gpr[N] must equal N for fdN
-  LI r4, 4
+send_one_byte:
+  LI r3, 3                 # ep handle for the pipe reader fd 3
+  LI r4, 4                 # ep handle for the pipe writer fd 4
   LI r12, 80
   LI r1, 81
   ST.B [r12, 0], r1
   LI r13, 1
-  WRITE_FD fd4, r12, r13   # pipe writer fd4 (static); result in r2
+  LI r24, 160              # send msg descriptor
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r2, r4, r24         # send 1 byte over the pipe writer fd4
   BNE r2, r13, bad
 
 build_waitset:
@@ -53,7 +58,12 @@ poll_ready:
 drain_pipe:
   LI r16, 88
   LI r13, 1
-  READ_FD fd3, r16, r13  # drain the byte; pipe reader now empty
+  LI r25, 192              # recv msg descriptor
+  ST [r25, 0], r16
+  ST [r25, 8], r13
+  ST [r25, 16], r0
+  ST [r25, 24], r0
+  RECV r2, r3, r25        # drain the byte; pipe reader now empty
 
 poll_not_ready:
   ST [r5, 16], r0

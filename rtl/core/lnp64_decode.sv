@@ -141,7 +141,8 @@ module lnp64_decode (
             // --- system / capability / FDR / path primitives (single word) ---
              8'h2b: begin dec.opcode = LNP64_OP_PULL; end
              8'h2c: begin dec.opcode = LNP64_OP_PUSH; end
-             8'h2d: begin dec.opcode = LNP64_OP_READ_FD; end
+             // 0x2d (static read_fd) retired in EP-I-full read_fd/write_fd sweep;
+             // recv (0x84) decodes to the READ_FD microcode that stays below.
              8'h2e: begin dec.opcode = LNP64_OP_AWAIT; end
              8'h2f: begin dec.opcode = LNP64_OP_GATE_CALL; end
              8'h38: begin dec.opcode = LNP64_OP_GET_ERRNO; end
@@ -163,7 +164,8 @@ module lnp64_decode (
              8'h52: begin dec.opcode = LNP64_OP_CAP_RECV; end
              8'h53: begin dec.opcode = LNP64_OP_CAP_REVOKE; end
              8'h56: begin dec.opcode = LNP64_OP_ENV_GET; end
-             8'h57: begin dec.opcode = LNP64_OP_WRITE_FD; end
+             // 0x57 (static write_fd) retired in EP-I-full read_fd/write_fd sweep;
+             // send (0x83) decodes to the WRITE_FD microcode that stays below.
              8'h59: begin dec.opcode = LNP64_OP_CLONE; end
              8'h5a: begin dec.opcode = LNP64_OP_JOIN; end
              8'h5b: begin dec.opcode = LNP64_OP_DMA_CTL; end

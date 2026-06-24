@@ -1,4 +1,5 @@
 .data
+_epdesc: .zero 32
 ok_msg: .string "await timer ok\n"
 obj: .zero 72
 timer_ticks: .quad 2
@@ -23,13 +24,25 @@ create_timer:
   BEQ r11, r29, bad
   LI r12, timer_ticks
   LI r13, 8
-  WRITE_FD fd3, r12, r13
+  LI r25, 3
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd3 -> send over byte-fd
 
 await_timer:
   AWAIT r14, fd3, r20
   BNE r14, r0, bad
   LI r12, timer_out
-  READ_FD fd3, r12, r13
+  LI r25, 3
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd3 -> recv over byte-fd
   LD r15, [r12, 0]
   BLE r15, r0, bad
 
@@ -53,7 +66,13 @@ create_ready_event_counter:
 done:
   LI r1, ok_msg
   LI r2, 15
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:

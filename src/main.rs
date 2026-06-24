@@ -619,8 +619,6 @@ fn encode_flat_exec_instr(
         Instr::Inb(dst, port) => Ok(vec![enc_rrr(0x80, *dst, *port, Reg(0))]),
         Instr::Outb(port, src) => Ok(vec![enc_rrr(0x81, *port, *src, Reg(0))]),
         Instr::LoadUcode(buf, len) => Ok(vec![enc_rrr(0x82, *buf, *len, Reg(0))]),
-        Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
-        Instr::ReadFd(fd, buf, len) => Ok(vec![enc_rrr(0x2d, Reg(fd.0), *buf, *len)]),
         // Unified endpoint IPC verbs (Phase 3): result=rd, ep handle=rs1, msg
         // descriptor pointer=rs2. send/recv route over byte-fds in the RTL via
         // the WRITE_FD/READ_FD datapath (EP-I-lite); wait is emulator/libc-only
@@ -1451,22 +1449,6 @@ mod tests {
     }
 
     #[test]
-    fn asm_flat_exec_encodes_static_fd_read_write() {
-        let source = r#"
-            .text
-              LI r12, 80
-              LI r13, 1
-              WRITE_FD fd5, r12, r13
-              READ_FD fd6, r14, r13
-              EXIT r1
-        "#;
-        let program = Program::parse(source).unwrap();
-        let hex = encode_flat_exec_hex(&program).unwrap();
-
-        assert_eq!(hex, "a060000000140000\na068000000004000\n572b1a0000000000\n2d339a0000000000\n3a08000000000000\n");
-    }
-
-    #[test]
     fn asm_flat_exec_encodes_await_static_and_dynamic() {
         let source = r#"
             .text
@@ -1491,14 +1473,13 @@ mod tests {
             .text
               LI r1, msg
               LI r2, buf
-              WRITE_FD fd1, r1, r2
               EXIT r0
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
         let data_hex = encode_flat_exec_data_hex(&program).unwrap();
 
-        assert_eq!(hex, "a008000040000000\na010000040010000\n5708440000000000\n3a00000000000000\n");
+        assert_eq!(hex, "a008000040000000\na010000040010000\n3a00000000000000\n");
         assert_eq!(data_hex, "00000000000a6b6f\n");
     }
 

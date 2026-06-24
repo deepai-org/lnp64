@@ -1,4 +1,5 @@
 .data
+_epdesc: .zero 32
 ok_msg: .string "cap transfer ok\n"
 obj: .zero 72
 cap: .zero 32
@@ -63,19 +64,37 @@ receive_read_only:
 
 write_original:
   LI r12, payload
-  WRITE_FD fd5, r12, r13
+  LI r25, 5
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd5 -> send over byte-fd
   BNE r1, r13, bad
 
 read_received:
   LI r16, out
-  READ_FD fd6, r16, r13
+  LI r25, 6
+  LI r24, _epdesc
+  ST [r24, 0], r16
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd6 -> recv over byte-fd
   BNE r1, r13, bad
   LD.B r17, [r16, 0]
   LI r18, 82
   BNE r17, r18, bad
 
 write_denied_after_narrow:
-  WRITE_FD fd6, r12, r13
+  LI r25, 6
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd6 -> send over byte-fd
   BNE r1, r29, bad
   ERRNO_GET r19
   LI r1, 1
@@ -86,7 +105,13 @@ revoke_source_lineage:
   ST [r20, 0], r1
   CAP_REVOKE r21, r20
   BLE r21, r0, bad
-  READ_FD fd6, r16, r13
+  LI r25, 6
+  LI r24, _epdesc
+  ST [r24, 0], r16
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd6 -> recv over byte-fd
   ERRNO_GET r22
   LI r1, 116
   BNE r22, r1, bad
@@ -94,7 +119,13 @@ revoke_source_lineage:
 done:
   LI r1, ok_msg
   LI r2, 16
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:

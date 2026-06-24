@@ -379,10 +379,6 @@ impl Parser {
                 arity(3)?;
                 Instr::OpenDirDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "READ_FD" => {
-                arity(3)?;
-                Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
-            }
             "PREAD_FD" => {
                 arity(4)?;
                 Instr::PreadFd(
@@ -416,10 +412,6 @@ impl Parser {
             "REWINDDIR_FD_DYN" => {
                 arity(1)?;
                 Instr::RewinddirFdDyn(reg(&args[0])?)
-            }
-            "WRITE_FD" => {
-                arity(3)?;
-                Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "PWRITE_FD" => {
                 arity(4)?;

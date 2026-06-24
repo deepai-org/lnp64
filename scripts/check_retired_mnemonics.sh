@@ -28,6 +28,10 @@ retired=(
   WAITABLE_PROBE
   POLL_FD
   AWAIT_EX
+  # EP-I-full read_fd/write_fd sweep: 0x2d/0x57 static byte-fd ops — recv/send
+  # subsume them (the READ_FD/WRITE_FD *microcode* stays; the verb decodes to it).
+  READ_FD
+  WRITE_FD
 )
 
 # Hand-written assembly / C the toolchain assembles or compiles.

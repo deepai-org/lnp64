@@ -1,4 +1,5 @@
 .data
+_epdesc: .zero 32
 ok_msg: .string "call gate modes ok\n"
 obj: .zero 72
 counter_out: .zero 8
@@ -43,7 +44,13 @@ create_async_gate:
   BLE r15, r0, bad
   LI r16, counter_out
   LI r17, 8
-  READ_FD fd3, r16, r17
+  LI r25, 3
+  LI r24, _epdesc
+  ST [r24, 0], r16
+  ST [r24, 8], r17
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd3 -> recv over byte-fd
   BNE r1, r17, bad
   LD r18, [r16, 0]
   BNE r18, r15, bad
@@ -79,7 +86,13 @@ handoff_service:
   BNE r19, r0, bad
   LI r1, ok_msg
   LI r2, 19
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:

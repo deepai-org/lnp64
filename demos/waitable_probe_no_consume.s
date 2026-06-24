@@ -7,6 +7,7 @@
 # Differential: same source runs under emulator and RTL top-program smoke input.
 
 .data
+_epdesc: .zero 32
 ok_msg: .string "ok waitable_probe_no_consume\n"
 obj: .zero 72
 payload: .zero 8
@@ -39,7 +40,13 @@ push_payload:
   LI r13, 8
   LI r1, 42
   ST [r12, 0], r1
-  WRITE_FD fd4, r12, r13
+  LI r25, 4
+  LI r24, _epdesc
+  ST [r24, 0], r12
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd4 -> send over byte-fd
   BNE r1, r13, bad
 
 build_waitset:
@@ -62,7 +69,13 @@ probe_ready_twice:
 
 pull_after_probes:
   LI r16, out
-  READ_FD fd3, r16, r13
+  LI r25, 3
+  LI r24, _epdesc
+  ST [r24, 0], r16
+  ST [r24, 8], r13
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd3 -> recv over byte-fd
   BNE r1, r13, bad
   LD r17, [r16, 0]
   LI r18, 42
@@ -76,7 +89,13 @@ probe_empty_after_pull:
 done:
   LI r1, ok_msg
   LI r2, 29
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:

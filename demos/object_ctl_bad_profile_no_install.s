@@ -7,6 +7,7 @@
 # Differential: same source runs under emulator and RTL top-program smoke input.
 
 .data
+_epdesc: .zero 32
 ok_msg: .string "ok object_ctl_bad_profile_no_install\n"
 obj: .zero 72
 out: .zero 8
@@ -35,7 +36,13 @@ bad_profile_create:
 fd7_was_not_installed:
   LI r14, out
   LI r15, 1
-  READ_FD fd7, r14, r15
+  LI r25, 7
+  LI r24, _epdesc
+  ST [r24, 0], r14
+  ST [r24, 8], r15
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  RECV r26, r25, r24  # read_fd fd7 -> recv over byte-fd
   BNE r1, r29, bad
   ERRNO_GET r16
   LI r17, 9
@@ -44,7 +51,13 @@ fd7_was_not_installed:
 done:
   LI r1, ok_msg
   LI r2, 37
-  WRITE_FD fd1, r1, r2
+  LI r25, 1
+  LI r24, _epdesc
+  ST [r24, 0], r1
+  ST [r24, 8], r2
+  ST [r24, 16], r0
+  ST [r24, 24], r0
+  SEND r26, r25, r24  # write_fd fd1 -> send over byte-fd
   EXIT r0
 
 bad:
