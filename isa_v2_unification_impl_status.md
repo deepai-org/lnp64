@@ -1,5 +1,39 @@
 # ISA v2 Unification — Implementation Status & Roadmap
 
+## STANDING CHARTER (mandate — read on every resume)
+
+**North star:** drive the unification to its frozen, green, documented end-state —
+every legacy IPC/await/cap/queue opcode collapsed into the four verbs (send/recv/
+gate_call/wait), the M16 endpoint engine frozen against the single descriptor form
+(Resolved #4), domain track 1 done — then stop at the scope boundary and report.
+Central decisions are made (Resolved #4 single-form, #5 M1 re-coupling = option a);
+no per-unit greenlight needed. Resume from this tracker each turn and keep
+advancing; checkpoint at clean fully-gated boundaries when the next unit is heavy/
+formal (that's a session boundary, not a question).
+
+**Run order:** await family → M1 re-coupling keystone (push/pull + cap_send/cap_recv)
+→ EP-I-full-d freeze (incl. multi-entry + blocking wait) → A1 (finite-timeout
+wakeup) → A2 (SCM_RIGHTS over AF_UNIX: implement or gated rung, no silent gap) →
+domain track 1 (N5 cheap-leaf, N2 domain record, N3 confinement) → capstone
+(verb-coverage audit, final B1, doc finalization incl. design.md §4/E1) →
+whole-suite green → report done at ~117 + frozen engine.
+
+**Non-negotiable invariants:** one opcode-group/commit (never half-freed); every
+commit fully gated (clean build, fresh server, cosim byte-exact + cargo + Redis +
+M1–M16 + D2); D2 guard + B1 row per removal; migrations preserve exact observable
+semantics (prove non-mechanical mappings, never approximate); M1/M16 stay exactly
+as strong — coverage conserved-or-grow across every re-coupling; single descriptor
+form; score on opcode/type count + concept-unity (density irrelevant).
+
+**Scope boundary (do NOT cross without explicit unfreeze):** scheduler/track 2,
+migrating-IPC/track 3, unified_call Phase 4, signal-fold spelling. Reaching the
+boundary with the do-now unification complete is the terminal success report.
+
+Status: byte-fd collapse done, **121 live opcodes**, all gated/pushed. Next: await
+family.
+
+---
+
 Live tracker for landing **unified endpoints** (`unified_object_model.md`, Phase 3)
 and **unified domains** (`unified_object_model.md` track 1, Phase 2) across every
 layer, per the umbrella roadmap in `isa_v2_design.md` §7–§8.
