@@ -42,6 +42,24 @@ static lnp64_word_t lnp64_poll_timeout_word(int timeout) {
 
 enum { LNP64_POLL_WAIT_MAX = 64 };
 
+/* EP-I-full await retirement: per-fd readiness via the unified `wait` verb,
+   replacing the legacy per-fd __lnp_await probe. Builds a 1-entry { handle,
+   events, revents } waitset and returns the revents the verb writes back
+   (POLLNVAL for a bad/unpollable fd). timeout=0 polls; nonzero blocks until an
+   edge or the deadline — exactly the await(fd,mask,timeout) contract. */
+static lnp64_word_t lnp64_wait_one(lnp64_word_t fd, lnp64_word_t events,
+                                   lnp64_word_t timeout) {
+  lnp64_word_t entry[3];   /* {handle, events, revents} */
+  lnp64_word_t waitset[2]; /* {entries_ptr, count} */
+  entry[0] = fd;
+  entry[1] = events;
+  entry[2] = 0;
+  waitset[0] = (lnp64_word_t)entry;
+  waitset[1] = 1;
+  (void)__lnp_wait((lnp64_word_t)waitset, timeout);
+  return entry[2];
+}
+
 int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   if (!fds && nfds != 0)
     return -1;
@@ -88,11 +106,8 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
     fds[i].revents = 0;
     if (fds[i].fd < 0 || events == 0)
       continue;
-    lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fds[i].fd, events, 0);
-    if ((long)rv < 0) {
-      fds[i].revents = LNP64_POLLNVAL;
-      ready++;
-    } else if (rv != 0) {
+    lnp64_word_t rv = lnp64_wait_one((lnp64_word_t)(unsigned long)fds[i].fd, events, 0);
+    if (rv != 0) { /* revents incl. POLLNVAL — a returned event counts as ready */
       fds[i].revents = (short)rv;
       ready++;
     }
@@ -106,9 +121,8 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
       lnp64_word_t ev = (lnp64_word_t)(unsigned short)fds[j].events;
       fds[j].revents = 0;
       if (fds[j].fd < 0 || ev == 0) continue;
-      lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fds[j].fd, ev, 0);
-      if ((long)rv < 0) { fds[j].revents = LNP64_POLLNVAL; n++; }
-      else if (rv != 0) { fds[j].revents = (short)rv; n++; }
+      lnp64_word_t rv = lnp64_wait_one((lnp64_word_t)(unsigned long)fds[j].fd, ev, 0);
+      if (rv != 0) { fds[j].revents = (short)rv; n++; }
     }
     if (n > 0) return n;
   }
@@ -373,9 +387,9 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
     }
     if (mask == 0)
       continue;
-    lnp64_word_t status =
-        __lnp_await((lnp64_cap_t)lnp64_kqueue_ident[i], mask, timeout_word);
-    if (status == 0) {
+    lnp64_word_t rv =
+        lnp64_wait_one((lnp64_word_t)lnp64_kqueue_ident[i], mask, timeout_word);
+    if ((rv & mask) != 0) { /* ready for the requested filter (was await status==0) */
       eventlist[ready].ident = lnp64_kqueue_ident[i];
       eventlist[ready].filter = lnp64_kqueue_filter[i];
       eventlist[ready].flags = 0;
@@ -430,7 +444,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
   if (readfds)  orig_rfds = *readfds;
   if (writefds) orig_wfds = *writefds;
 
-  /* Non-blocking scan: __lnp_await(fd, mask, 0) returns >0 if ready, 0 if not */
+  /* Non-blocking scan via the wait verb (lnp64_wait_one); revents>0 = ready. */
   int ready = 0;
   for (int fd = 0; fd < nfds; fd = fd + 1) {
     lnp64_word_t events = 0;
@@ -439,8 +453,8 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
     if (exceptfds && lnp64_fd_isset(fd, exceptfds)) events |= LNP64_POLLERR;
     if (events == 0)
       continue;
-    lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fd, events, 0);
-    if ((long)rv > 0) {
+    lnp64_word_t rv = lnp64_wait_one((lnp64_word_t)(unsigned long)fd, events, 0);
+    if ((rv & events) != 0) { /* ready for a requested event (POLLNVAL excluded) */
       ready = ready + 1;
     } else {
       if (readfds)  lnp64_fd_clear(fd, readfds);
@@ -466,8 +480,8 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
       if (writefds && lnp64_fd_isset(j, &orig_wfds)) ev |= LNP64_POLLOUT;
       if (ev == 0)
         continue;
-      lnp64_word_t s = __lnp_await((lnp64_cap_t)(unsigned long)j, ev, 0);
-      if ((long)s > 0) {
+      lnp64_word_t s = lnp64_wait_one((lnp64_word_t)(unsigned long)j, ev, 0);
+      if ((s & ev) != 0) {
         n = n + 1;
       } else {
         if (readfds)  lnp64_fd_clear(j, readfds);
