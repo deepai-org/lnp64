@@ -632,9 +632,6 @@ fn encode_flat_exec_instr(
         }
         Instr::Await(result, fd, mask) => Ok(vec![enc_rrr(0x2e, *result, Reg(fd.0), *mask)]),
         Instr::AwaitDyn(result, fd_reg, mask, timeout) => Ok(vec![enc_rrrr(0x4d, *result, *fd_reg, *mask, *timeout)]),
-        Instr::AwaitEx(result, fd, argblock) => {
-            Ok(vec![enc_rrr(0x71, *result, Reg(fd.0), *argblock)])
-        }
         Instr::CallCap(result, fd, arg0, arg1) => {
             Ok(vec![enc_rrrr(0x2f, *result, Reg(fd.0), *arg0, *arg1)])
         }

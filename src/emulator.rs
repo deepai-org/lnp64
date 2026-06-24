@@ -2189,9 +2189,9 @@ impl Machine {
             0x6e => Instr::FdCloseDyn(a),
             // 0x6f (waitable_probe) retired in EP-I-full-b — the wait verb's
             // single-entry non-blocking poll (revents in the entry) subsumes it.
-            // 0x70/0x72 (WaitableProbeDyn/AwaitExDyn) retired in F1 — the static
-            // waitable_probe/await_ex (GPR-handle) and the `wait` verb cover them.
-            0x71 => Instr::AwaitEx(a, FdReg(b.0), c),
+            // 0x70/0x72 (WaitableProbeDyn/AwaitExDyn) retired in F1; 0x71
+            // (await_ex) retired in EP-I-full-b — the `wait` verb (timeout=0 for
+            // the old poll modes 0/1, WAIT_FOREVER for the mode-4 block) covers it.
             0x73 => Instr::OpenDirDyn(a, b, c),
             0x74 => Instr::MkdirPathAt(a, b, c),
             0x75 => Instr::RenamePathAt(a, b, c, d),
@@ -2908,16 +2908,6 @@ impl Machine {
                 /* timeout==0 non-blocking OR already ready: return revents mask */
                 let revents = self.poll_fd_index_mask_raw(fd, mask)?;
                 self.complete_reg_ok(result, revents)?;
-            }
-            Instr::AwaitEx(result, fd, argblock) => {
-                Self::ensure_result_reg_writable(result)?;
-                // ISA-v2: fd operand is a GPR holding the fd handle value.
-                let fd_value = self.read_reg(Reg(fd.0))?;
-                let argblock = self.read_reg(argblock)?;
-                match self.decode_fd_value(fd_value) {
-                    Ok(fd) => self.await_ex_index(result, fd, argblock)?,
-                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
-                };
             }
             Instr::Alloc(dst, bytes_reg) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -10474,27 +10464,6 @@ impl Machine {
         let result = f(self);
         self.current_tid = saved;
         result
-    }
-
-    fn await_ex_index(&mut self, result: Reg, fd: usize, argblock: u64) -> Result<(), String> {
-        let mode = self.load_u64_offset(argblock, 0)?;
-        let mask = self.load_u64_offset(argblock, 8)?;
-        if !matches!(mode, 0 | 1 | 4) {
-            return self.complete_reg_negative_errno(result, 22);
-        }
-        if fd >= FDR_COUNT {
-            return self.complete_reg_negative_errno(result, 9);
-        }
-        if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_POLL) {
-            return self.complete_reg_negative_errno(result, errno);
-        }
-        let revents = self.poll_fd_index_mask_raw(fd, mask)?;
-        if revents != 0 || matches!(mode, 0 | 1) {
-            return self.complete_reg_ok(result, revents);
-        }
-        self.push_fd_waiter(fd, mask, Some(result))?;
-        self.ready.retain(|tid| *tid != self.current_tid);
-        Ok(())
     }
 
     fn poll_fd_index_mask_raw(&mut self, fd: usize, events: u64) -> Result<u64, String> {
@@ -21047,7 +21016,11 @@ mod tests {
     }
 
     #[test]
-    fn await_ex_uses_argblock_mode_and_mask() {
+    fn wait_poll_reports_readiness_per_mask() {
+        // await_ex's non-blocking modes (0/1) are wait with timeout=0; its mode-4
+        // block is wait with WAIT_FOREVER. The argblock mask is the entry's events.
+        // (await_ex's invalid-mode EINVAL check had no wait analog and retired with
+        // the opcode — wait callers pick a timeout directly, there is no mode.)
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         {
@@ -21058,52 +21031,20 @@ mod tests {
             };
             process.fd_capabilities[3] = FdCapability::full(3);
         }
-        machine.store_u64(ARG_BASE, 0).unwrap();
-        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
-        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
-        machine.thread_mut().unwrap().regs[3] = 3;
-
-        machine
-            .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
-            .unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[5], POLLIN_MASK);
+        // Ready event-counter, mask=POLLIN -> revents POLLIN, 1 ready.
+        wait_probe(&mut machine, Reg(5), 3, POLLIN_MASK).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 1);
+        assert_eq!(wait_revents(&mut machine), POLLIN_MASK);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.fd_waiters.is_empty());
 
+        // Pipe reader with no data -> revents 0, 0 ready.
         create_pipe_pair(&mut machine, 6, 7);
-        machine.store_u64(ARG_BASE, 1).unwrap();
-        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
-        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
-        machine.thread_mut().unwrap().regs[6] = 6;
-
-        machine
-            .exec(Instr::AwaitEx(Reg(8), FdReg(6), Reg(2)))
-            .unwrap();
-
+        wait_probe(&mut machine, Reg(8), 6, POLLIN_MASK).unwrap();
         assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(wait_revents(&mut machine), 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.fd_waiters.is_empty());
-    }
-
-    #[test]
-    fn await_ex_rejects_invalid_mode_with_negative_errno() {
-        let mut machine = Machine::new(empty_program());
-        machine.current_tid = 1;
-        create_pipe_pair(&mut machine, 3, 4);
-        machine.store_u64(ARG_BASE, 99).unwrap();
-        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
-        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
-        machine.thread_mut().unwrap().regs[3] = 3;
-
-        machine
-            .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
-            .unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[5], 0u64.wrapping_sub(22));
-        assert_eq!(machine.process().unwrap().errno, 22);
-        assert!(machine.fd_waiters.is_empty());
-        assert!(machine.ready.contains(&1));
     }
 
     #[test]

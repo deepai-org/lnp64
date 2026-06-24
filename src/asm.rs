@@ -325,13 +325,6 @@ impl Parser {
                     Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?, Reg(0))
                 }
             }
-            // F1: the dynamic await_ex/waitable_probe twins are retired. The
-            // fd operand is an `fdN` register holding the handle (the static
-            // form already reads the GPR); the `wait` verb covers the rest.
-            "AWAIT_EX" => {
-                arity(3)?;
-                Instr::AwaitEx(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
-            }
             "ALLOC" => {
                 arity(2)?;
                 Instr::Alloc(reg(&args[0])?, reg(&args[1])?)
@@ -1280,21 +1273,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn parses_await_ex_static_waitable() {
-        // F1: AWAIT_EX takes an fdN handle register (the dynamic twin is retired).
-        let program = Program::parse(
-            r#"
-            .text
-              AWAIT_EX r1, fd2, r3
-            "#,
-        )
-        .unwrap();
-        assert!(matches!(
-            program.instructions[0],
-            Instr::AwaitEx(Reg(1), FdReg(2), Reg(3))
-        ));
-    }
 
     #[test]
     fn parses_get_pcr_tls_base_alias() {

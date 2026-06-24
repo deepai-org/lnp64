@@ -175,8 +175,8 @@ module lnp64_decode (
              8'h6d: begin dec.opcode = LNP64_OP_OPEN_FD; end
              8'h6e: begin dec.opcode = LNP64_OP_FD_CLOSE; end
              // 0x6f (waitable_probe) retired in EP-I-full-b — the wait verb subsumes it.
-             // 0x70/0x72 (dynamic waitable_probe/await_ex twins) retired in F1.
-             8'h71: begin dec.opcode = LNP64_OP_AWAIT_EX; end
+             // 0x70/0x72 (dynamic twins) retired in F1; 0x71 (await_ex) retired in
+             // EP-I-full-b — the wait verb (timeout selects poll vs block) covers it.
              8'h7d: begin dec.opcode = LNP64_OP_FORK; end
              8'h7f: begin dec.opcode = LNP64_OP_EXEC; end
              8'h80: begin dec.opcode = LNP64_OP_INB; end
@@ -288,7 +288,6 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_WAIT ||
-            dec.opcode == LNP64_OP_AWAIT_EX ||
             dec.opcode == LNP64_OP_GET_PCR ||
             dec.opcode == LNP64_OP_SET_PCR ||
             dec.opcode == LNP64_OP_CLONE ||

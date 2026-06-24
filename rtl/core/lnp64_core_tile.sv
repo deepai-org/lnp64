@@ -448,9 +448,6 @@ module lnp64_core_tile #(
     int unsigned await_queue_slot;
     logic await_fd_in_range;
     logic await_fd_ready;
-    logic [63:0] await_ex_argblock_addr;
-    logic [63:0] await_ex_mode;
-    logic [63:0] await_ex_mask;
     int unsigned call_gate_fd;
     logic call_gate_fd_in_range;
     logic call_gate_fd_live;
@@ -1428,23 +1425,6 @@ module lnp64_core_tile #(
                         flat_retire_errno_value = LNP64_ERR_OK;
                     end
                 end
-                LNP64_OP_AWAIT_EX: begin
-                    if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 || await_ex_mode == 64'd4)) begin
-                        flat_retire_errno_value = LNP64_ERR_EINVAL;
-                    end else if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                        flat_retire_errno_value = LNP64_ERR_EBADF;
-                    end else if (fdr_revoked[await_fd]) begin
-                        flat_retire_errno_value = RTL_ERR_ESTALE;
-                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                        flat_retire_errno_value = LNP64_ERR_EPERM;
-                    end else if (await_fd_ready && ((await_ex_mask & 64'd1) != 64'd0)) begin
-                        flat_retire_errno_value = LNP64_ERR_OK;
-                    end else if (await_ex_mode == 64'd4) begin
-                        flat_retire_errno_value = LNP64_ERR_EAGAIN;
-                    end else begin
-                        flat_retire_errno_value = LNP64_ERR_OK;
-                    end
-                end
                 LNP64_OP_GATE_CALL: begin
                     if (!call_gate_fd_live) begin
                         flat_retire_errno_value = LNP64_ERR_EBADF;
@@ -1725,23 +1705,6 @@ module lnp64_core_tile #(
                         result = 64'hffff_ffff_ffff_ffff;
                     end else begin
                         result = wait_ready_count;
-                    end
-                end
-                LNP64_OP_AWAIT_EX: begin
-                    if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 || await_ex_mode == 64'd4)) begin
-                        result = negative_errno(LNP64_ERR_EINVAL);
-                    end else if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                        result = negative_errno(LNP64_ERR_EBADF);
-                    end else if (fdr_revoked[await_fd]) begin
-                        result = negative_errno(RTL_ERR_ESTALE);
-                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                        result = negative_errno(LNP64_ERR_EPERM);
-                    end else if (await_fd_ready && ((await_ex_mask & 64'd1) != 64'd0)) begin
-                        result = 64'd1;
-                    end else if (await_ex_mode == 64'd4) begin
-                        result = negative_errno(LNP64_ERR_EAGAIN);
-                    end else begin
-                        result = 64'd0;
                     end
                 end
                 LNP64_OP_GATE_CALL: begin
@@ -2094,9 +2057,6 @@ module lnp64_core_tile #(
         end else begin
             await_fd = fdr_value_fd(gpr[dec.rs1]);
         end
-        await_ex_argblock_addr = gpr[dec.rs2];
-        await_ex_mode = load_double_unaligned(await_ex_argblock_addr);
-        await_ex_mask = load_double_unaligned(await_ex_argblock_addr + 64'd8);
         await_fd_in_range = await_fd < FDR_SLOT_COUNT;
         await_queue_slot = pipe_endpoint_queue_slot(await_fd);
         await_fd_ready = 1'b0;
@@ -3811,35 +3771,6 @@ module lnp64_core_tile #(
                                         dcache_writeback <= 1'b1;
                                     end
                                     gpr[dec.rd] <= wait_ready_count;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AWAIT_EX: begin
-                                if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 ||
-                                      await_ex_mode == 64'd4)) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EINVAL};
-                                    errno_reg <= LNP64_ERR_EINVAL;
-                                end else if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EBADF};
-                                    errno_reg <= LNP64_ERR_EBADF;
-                                end else if (fdr_revoked[await_fd]) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, RTL_ERR_ESTALE};
-                                    errno_reg <= RTL_ERR_ESTALE;
-                                end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
-                                    errno_reg <= LNP64_ERR_EPERM;
-                                end else if (await_fd_ready && ((await_ex_mask & 64'd1) != 64'd0)) begin
-                                    gpr[dec.rd] <= 64'd1;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end else if (await_ex_mode == 64'd4) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EAGAIN};
-                                    errno_reg <= LNP64_ERR_EAGAIN;
-                                end else begin
-                                    gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;

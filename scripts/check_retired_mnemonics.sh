@@ -24,9 +24,10 @@ retired=(
   WRITE_FD_DYN
   PULL_DYN
   PUSH_DYN
-  # EP-I-full-b: 0x6f waitable_probe — the wait verb's single-entry poll subsumes it.
+  # EP-I-full-b: 0x6f waitable_probe + 0x71 await_ex — the wait verb subsumes them.
   WAITABLE_PROBE
   POLL_FD
+  AWAIT_EX
 )
 
 # Hand-written assembly / C the toolchain assembles or compiles.

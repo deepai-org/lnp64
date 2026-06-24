@@ -319,7 +319,8 @@ reusable):
 | F2        | 0x4e (CallCapDyn dup)    | (none — CallCapDyn had no asm mnemonic)   | 124                     |
 | EP-I-full-a | (adds wait 0x86)       | (none — adds the unifying verb)           | 125 (+1, enabling)      |
 | EP-I-full-b1 | 0x6f (waitable_probe) | WAITABLE_PROBE, POLL_FD                    | 124                     |
-| (remaining) | 0x71 await_ex (b2); 0x51/0x52 cap_send/cap_recv (c); then the libc-batch (0x2b/0x2c/0x2d/0x57/0x2e + Redis rebuild) | … | → ~118 and down |
+| EP-I-full-b2 | 0x71 (await_ex)       | AWAIT_EX                                   | 123                     |
+| (remaining) | 0x51/0x52 cap_send/cap_recv (c); then the libc-batch (0x2b/0x2c/0x2d/0x57/0x2e + Redis rebuild) | … | → ~118 and down |
 
 Running total freed after F2: **5 opcodes** (0x3b, 0x3c, 0x4e, 0x70, 0x72). F2 was
 a pure dead-surface removal: CallCapDyn (0x4e) was a literal duplicate of

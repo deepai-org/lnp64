@@ -151,7 +151,6 @@ pub enum Instr {
     Push(Reg, FdReg, Reg, Reg),
     Await(Reg, FdReg, Reg),
     AwaitDyn(Reg, Reg, Reg, Reg),
-    AwaitEx(Reg, FdReg, Reg),
     Alloc(Reg, Reg),
     AllocEx(Reg, Reg, Reg),
     AllocSize(Reg, Reg),

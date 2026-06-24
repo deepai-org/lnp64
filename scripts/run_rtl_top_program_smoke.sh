@@ -477,8 +477,6 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "PushDyn": "LNP64_OP_PUSH",
         "Await": "LNP64_OP_AWAIT",
         "AwaitDyn": "LNP64_OP_AWAIT",
-        "AwaitEx": "LNP64_OP_AWAIT_EX",
-        "AwaitExDyn": "LNP64_OP_AWAIT_EX",
         "CallCap": "LNP64_OP_GATE_CALL",
         "RetCap": "LNP64_OP_GATE_RETURN",
         "ErrnoGet": "LNP64_OP_GET_ERRNO",
@@ -574,9 +572,8 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         0x6C: opcodes["LNP64_OP_MPROTECT"],
         0x6D: opcodes["LNP64_OP_OPEN_FD"],
         0x6E: opcodes["LNP64_OP_FD_CLOSE"],
-        # 0x6f (waitable_probe) retired in EP-I-full-b — the wait verb subsumes it.
-        # 0x70/0x72 (dynamic waitable_probe/await_ex twins) retired in F1.
-        0x71: opcodes["LNP64_OP_AWAIT_EX"],
+        # 0x6f (waitable_probe), 0x71 (await_ex) retired in EP-I-full-b; 0x70/0x72
+        # (dynamic twins) retired in F1 — all subsumed by the wait verb.
         0xC5: opcodes["LNP64_OP_LR_D"],
         0xC6: opcodes["LNP64_OP_SC_D"],
         0xD0: opcodes["LNP64_OP_AUIPC"],
