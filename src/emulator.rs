@@ -2153,7 +2153,8 @@ impl Machine {
             0x4b => Instr::ObjectCtl(a, b),
             0x4c => Instr::DomainCtl(a, b),
             0x4d => Instr::AwaitDyn(a, b, c, d),
-            0x4e => Instr::CallCapDyn(a, b, c, d),
+            // 0x4e (CallCapDyn) retired in F2 — a literal duplicate of gate_call
+            // (0x2f/CallCap); callers use gate_call with identical semantics.
             0x4f => Instr::RetCap(a, b, c),
             0x50 => Instr::CapDup(a, b),
             0x51 => Instr::CapSend(a, b),
@@ -4316,19 +4317,6 @@ impl Machine {
                 Self::ensure_result_reg_writable(result)?;
                 let Some(call_gate_fd) = self.checked_fd_index(self.read_reg(Reg(call_gate.0))?)?
                 else {
-                    self.complete_reg_err(result, 9)?;
-                    return Ok(true);
-                };
-                self.call_cap(
-                    result,
-                    call_gate_fd,
-                    self.read_reg(arg0)?,
-                    self.read_reg(arg1)?,
-                )?;
-            }
-            Instr::CallCapDyn(result, call_gate, arg0, arg1) => {
-                Self::ensure_result_reg_writable(result)?;
-                let Some(call_gate_fd) = self.checked_fd_index(self.read_reg(call_gate)?)? else {
                     self.complete_reg_err(result, 9)?;
                     return Ok(true);
                 };

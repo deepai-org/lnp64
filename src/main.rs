@@ -641,9 +641,6 @@ fn encode_flat_exec_instr(
         Instr::CallCap(result, fd, arg0, arg1) => {
             Ok(vec![enc_rrrr(0x2f, *result, Reg(fd.0), *arg0, *arg1)])
         }
-        Instr::CallCapDyn(result, fd_reg, arg0, arg1) => {
-            Ok(vec![enc_rrrr(0x4e, *result, *fd_reg, *arg0, *arg1)])
-        }
         Instr::RetCap(result, value0, value1) => Ok(vec![enc_rrr(0x4f, *result, *value0, *value1)]),
         Instr::Pull(result, fd, buf, len) => {
             Ok(vec![enc_rrrr(0x2b, *result, Reg(fd.0), *buf, *len)])

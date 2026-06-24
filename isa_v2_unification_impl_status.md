@@ -310,10 +310,14 @@ reusable):
 |-----------|--------------------------|-------------------------------------------|-------------------------|
 | F1-step-1 | 0x70, 0x72               | POLL_FD_DYN, AWAIT_EX_DYN, WAITABLE_PROBE_DYN | (—)                 |
 | F1-step-2 | 0x3b, 0x3c               | READ_FD_DYN, WRITE_FD_DYN, PULL_DYN, PUSH_DYN  | 125                 |
-| F2        | 0x4e (call_cap dup)      | (pending)                                 | (pending)               |
+| F2        | 0x4e (CallCapDyn dup)    | (none — CallCapDyn had no asm mnemonic)   | 124                     |
 | step-3    | read_fd/write_fd/push/pull/cap_send/cap_recv/await*/waitable_probe* | (pending) | (pending)    |
 
-Running total freed after F1-step-2: **4 opcodes** (0x3b, 0x3c, 0x70, 0x72).
+Running total freed after F2: **5 opcodes** (0x3b, 0x3c, 0x4e, 0x70, 0x72). F2 was
+a pure dead-surface removal: CallCapDyn (0x4e) was a literal duplicate of
+gate_call (0x2f/CallCap) with no asm mnemonic, no codegen, no test, no demo —
+only the enum/encoder/decoder/handler existed. Zero call-site changes, zero
+corpus cost (confirming "the code-size cost is already fully paid").
 The D2 guard `scripts/check_retired_mnemonics.sh` enforces that no source emits a
 retired mnemonic (decode removal alone breaks only at assemble/link/run time).
 
@@ -372,6 +376,74 @@ today.
 - **D2 guard:** `scripts/check_retired_mnemonics.sh` added and green.
 - **Gate:** clean-build `flat_hex_programs` cosim 35/35 byte-exact; cargo 489;
   Redis green; M1–M16 unaffected (engine filelists exclude core_tile/decode).
+
+## F2: DONE (0x4e CallCapDyn retired — pure dead-surface dup of gate_call)
+
+`CallCapDyn` (0x4e) was a literal duplicate of `gate_call` (0x2f/`CallCap`) — same
+`self.call_cap` handler, differing only in fd-operand sourcing — but with **no asm
+mnemonic, no codegen/lowering, no cargo test, no demo**. Only the enum variant,
+encoder, decoder, and handler existed. Removed all four + the smoke decode-map
+entry. Zero call-site changes, zero corpus cost (confirming the code-size cost was
+already fully paid in F1-step-2). Live RTL decode opcodes 125 → **124**. Gate:
+clean-build cosim 35/35 byte-exact; cargo 489; Redis green; M1–M16 unaffected.
+
+## Revised tail sequencing + register-form fast path (SPEC — implement after step-3)
+
+New tail order: **F2 (done) → step-3 legacy sweep → register-form fast path →
+EP-I-full freeze.** The register-form fast path MUST land before EP-I-full so the
+M16 endpoint engine is frozen against the final encoding (form bit included);
+freezing descriptor-only then adding the bit would re-open M16.
+
+**Goal:** recover the per-call-site code size the descriptor form costs, *without*
+re-adding opcodes. `send`/`recv` stay single opcodes (0x83/0x84); a 1-bit `form`
+field selects operand sourcing — the `add r,r,r` vs `add r,r,imm` relationship,
+one operation with two operand encodings. Reuses the EP-I-lite `verb_form` mux:
+the form bit adds one selector value feeding the *same* shared store-load
+datapath. Operand sourcing remains the only fork (refinement #1 holds).
+
+**Encoding.** `form` at instruction bit **[25]** (first free low bit, just below
+rs5[30:26]; confirm no collision with the slots-immediate convention at
+implementation time — send/recv carry no immediate, so [25] is free).
+- `form=0` descriptor form (today): `rd=result, rs1=ep, rs2=desc` (enc_rrr).
+  **Bit-for-bit unchanged** — every existing program/test stays byte-identical
+  (this is the form=0 regression guard).
+- `form=1` reg form: `rd=result, rs1=fd/ep, rs2=ptr, rs3=len` (enc_rrrr, form bit
+  set). One word, no memory descriptor build.
+- Keep ONE `Instr::Send`/`Instr::Recv` variant; add a `form` field (or a
+  `desc_or_ptr_len` enum) so the encoder picks the layout. No new Instr variants
+  (that would be IR-level surface creep).
+
+**Compiler form-selection (policy in C, not ISel).** The form is chosen by *which
+libc builtin emits*: `__lnp64_send_bytes`/`__lnp64_recv_bytes` (reg form) vs
+`__lnp64_send_msg`/`__lnp64_recv_msg` (descriptor form) — a 1:1 builtin→pattern
+lowering, no operand inference in the backend. `write`/`read` → bytes builtin
+(single contiguous buffer, no caps/flags → reg form); `sendmsg`/`recvmsg`-with-
+control → msg builtin (iovec/multi-buffer, SCM_RIGHTS, or flags → descriptor
+form). These are already distinct libc functions, so no new branch. Do NOT
+implement form selection as ISel operand analysis (keeps the "extremely clean
+LLVM" goal — mechanism/policy split stays in readable C).
+
+**Emulator + RTL.** Extend the `verb_form` operand mux with reg-form sourcing:
+`form=1` → `fd = decode_fd_value(gpr[rs1])`, `buf_addr = gpr[rs2]`,
+`len = gpr[rs3]` (instead of `descriptor[0]`/`descriptor[8]`). Everything
+downstream (errno, result_value, the sequential pipe/SRAM/counter/timer store-
+load, the `read_fd_index`/`write_fd_index` helpers) is unchanged — a mux, not a
+second execute arm. Confirm reg-form recv writes bytes-read into result (r2)
+identically to descriptor form (observably equivalent modulo operand source).
+
+**M16 proof obligation.** M16's endpoint-engine refinement must cover both forms —
+prove reg form and descriptor form produce identical endpoint state transitions
+for the same logical `(fd, buf, len)`. This is the reason it precedes EP-I-full.
+
+**B1 (role flips to validation).** After reg form lands: re-migrate
+`top_pipe_push_pull` to reg form and record the new B1 row (expect ~32 words —
+back to/below the static-fd form). Then re-measure the Redis+libc corpus
+before/after via the bytes-builtin and record it — now the *proof the reg form
+recovered the code size*, not a gate on whether to build it. Flat-or-better ⇒
+"fewer instructions" met with the unified model intact.
+
+**Gate (unchanged).** Clean-build cosim byte-exact (form=0 programs MUST stay
+bit-identical — the regression guard), cargo, Redis, M1–M16, fresh server.
 
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 

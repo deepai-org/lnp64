@@ -484,7 +484,6 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "PollFd": "LNP64_OP_WAITABLE_PROBE",
         "PollFdDyn": "LNP64_OP_WAITABLE_PROBE",
         "CallCap": "LNP64_OP_GATE_CALL",
-        "CallCapDyn": "LNP64_OP_GATE_CALL",
         "RetCap": "LNP64_OP_GATE_RETURN",
         "ErrnoGet": "LNP64_OP_GET_ERRNO",
         "ErrnoSet": "LNP64_OP_SET_ERRNO",

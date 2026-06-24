@@ -156,7 +156,7 @@ module lnp64_decode (
              8'h4b: begin dec.opcode = LNP64_OP_OBJECT_CTL; end
              8'h4c: begin dec.opcode = LNP64_OP_DOMAIN_CTL; end
              8'h4d: begin dec.opcode = LNP64_OP_AWAIT; end
-             8'h4e: begin dec.opcode = LNP64_OP_GATE_CALL; end
+             // 0x4e (CallCapDyn) retired in F2 — duplicate of gate_call (0x2f).
              8'h4f: begin dec.opcode = LNP64_OP_GATE_RETURN; end
              8'h50: begin dec.opcode = LNP64_OP_CAP_DUP; end
              8'h51: begin dec.opcode = LNP64_OP_CAP_SEND; end
