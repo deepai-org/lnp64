@@ -257,3 +257,38 @@ software (Redis) already runs on them, so the legacy `_dyn` twins
 (0x3b/0x3c/0x70/0x72), `call_cap` (0x4e→gate_call), and the legacy
 push/pull/read_fd/write_fd/cap_send/cap_recv/await*/waitable_probe* paths can be
 removed — each removal gated on Redis green + cosim byte-exact + M1–M16 green.
+
+## Collapse sequencing (corrected) + EP-I-lite plan (next)
+
+Discovery during F1: the RTL has **no verb execution** (no SEND/RECV/WAIT in
+pkg/decode/core-tile), so cosim programs can't migrate to the verbs until the RTL
+runs them. Corrected order (additive → subtractive → heavyweight freeze):
+
+1. **EP-I-lite (NEXT, one gated commit)** — RTL verb decode + backing-dispatch,
+   **byte-fd arm only**. Add `LNP64_OP_SEND=0x83 / RECV=0x84 / WAIT=0x86` to the
+   pkg enum, RTL decode, core-tile exec, and main.rs flat enc (verbs aren't
+   flat-encodable today). **Structural correctness rule:** operand-sourcing is
+   the *only* fork — static arms source fd/buf/len from dec.rd/regs; verb arms
+   source ep=gpr[rs1], buf/len from the msg descriptor (gpr[rs2]+offsets) — and
+   **both feed one shared pipe/SRAM/waitable store-load datapath** (a small
+   operand mux, not a parallel reimplementation; the RTL analog of the shared
+   write_fd_index helper). Behavior identical to read_fd/write_fd ⇒ stays
+   cosim-byte-exact. No M16 typed-trace freeze needed. Validate with a
+   verb-over-pipe smoke that **becomes** F1-step-2's migrated top_pipe_push_pull
+   (one test, two jobs). Start from clean build + fresh server. Gate: clean-build
+   cosim 35/35 + M1–M16 + Redis.
+2. **F1/F2 collapse (resume)** — 0x3b/0x3c: migrate top_pipe_push_pull → verbs
+   (the EP-I-lite validation test) + cargo tests (end-to-end → verbs;
+   helper-semantics → call read_fd_index/write_fd_index directly), then free
+   0x3b/0x3c. Then 0x4e (call_cap→gate_call). Then the step-3 legacy sweep
+   (read_fd/write_fd/push/pull/cap_send/cap_recv/await*/waitable_probe* opcodes
+   removed; *_index helpers kept private — RTL byte-fd now runs via the verb
+   delegate). Each its own gated commit (Redis + cosim 35/35 + M1–M16).
+   Forward note: when read_fd/write_fd come out, grep toolchain/ + demos/ for any
+   static-mnemonic emitters (they'd break at link/run, not decode).
+3. **EP-I-full (LAST)** — M16 endpoint-engine freeze (the Memory-backed arm of
+   the same dispatch) against the final collapsed ISA, gated on M16 typed-trace +
+   cosim.
+
+F1 status: step 1 done (0x70/0x72 freed, commit bcc16a0). EP-G/EP-H done; Redis
+runs on the verbs. Next action: EP-I-lite.
