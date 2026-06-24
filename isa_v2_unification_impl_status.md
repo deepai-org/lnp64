@@ -476,6 +476,20 @@ independently whenever, since the RTL verb byte path already covers them.
      concept-unity moment in the effort. Own B1 row + a tracker note marking the
      keystone resolved, not just a −2.
 
+6. **The await family is TWO opcodes** (finding during the read_fd/write_fd run):
+   - **Await 0x2e** — the *blocking* await (`Instr::Await`, parks if not ready).
+     **No Redis/compiler emitter** (Redis uses 0x4d); emitters are ~8 cargo
+     parking-semantics tests + `demos/await_timer.s` + the asm `AWAIT` mnemonic.
+     Migrates to `wait(timeout=WAIT_FOREVER)` (block-until-ready). **No rebuild.**
+   - **AwaitDyn 0x4d** — the *non-blocking* timeout variant. `__lnp_await(fd,mask,
+     timeout)` lowers to this (manifest's "AWAIT" label notwithstanding); it is what
+     compiled Redis actually emits (5 sites, byte `…4d`). Maps cleanly to
+     `wait(timeout=0)` (poll, revents in the entry). Retiring it = poll_min
+     `__lnp_await`→`__lnp_wait` refactor + **Redis docker rebuild** (image present) +
+     free 0x4d + migrate the AwaitDyn cargo tests. Cleanest as one "await family"
+     commit (both 0x2e + 0x4d → wait) after the rebuild, so the family collapses
+     atomically. −2 (→119).
+
 ## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
 The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
