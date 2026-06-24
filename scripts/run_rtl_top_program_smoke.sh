@@ -526,6 +526,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         # microcode (send=write, recv=read), matching rtl/core/lnp64_decode.sv.
         "Send": "LNP64_OP_WRITE_FD",
         "Recv": "LNP64_OP_READ_FD",
+        "Wait": "LNP64_OP_WAIT",
         "LrD": "LNP64_OP_LR_D",
         "ScD": "LNP64_OP_SC_D",
     }

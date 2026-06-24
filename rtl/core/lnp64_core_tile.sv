@@ -433,6 +433,17 @@ module lnp64_core_tile #(
     int unsigned static_fd_buf_next_word_index;
     logic [2:0] static_fd_buf_byte_lane;
     logic [63:0] static_fd_write_value;
+    // EP-I-full: wait verb (single-entry waitset; general multi-entry stays
+    // M16-engine-modeled). gpr[rs1]=waitset -> entries_ptr[0]/count[8] -> entry
+    // {handle@0, events@8, revents@16}. await_fd is sourced from the handle so
+    // the existing readiness logic is reused; revents is written back to memory.
+    logic [63:0] wait_set_ptr;
+    logic [63:0] wait_entries_ptr;
+    logic [63:0] wait_count;
+    logic [63:0] wait_handle;
+    logic [63:0] wait_events;
+    logic [63:0] wait_revents;
+    logic [63:0] wait_ready_count;
     int unsigned await_fd;
     int unsigned await_queue_slot;
     logic await_fd_in_range;
@@ -1418,6 +1429,16 @@ module lnp64_core_tile #(
                         flat_retire_errno_value = LNP64_ERR_OK;
                     end
                 end
+                LNP64_OP_WAIT: begin
+                    // Non-blocking poll: ready count (incl. POLLNVAL entries) is
+                    // OK; an implausibly large set is EINVAL. Per-entry status is
+                    // in revents, not errno (mirrors ep_wait).
+                    if (wait_count > {32'd0, FDR_SLOT_COUNT}) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
                 LNP64_OP_AWAIT_EX: begin
                     if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 || await_ex_mode == 64'd4)) begin
                         flat_retire_errno_value = LNP64_ERR_EINVAL;
@@ -1721,6 +1742,13 @@ module lnp64_core_tile #(
                         result = 64'd1;
                     end else begin
                         result = 64'd0;
+                    end
+                end
+                LNP64_OP_WAIT: begin
+                    if (wait_count > {32'd0, FDR_SLOT_COUNT}) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else begin
+                        result = wait_ready_count;
                     end
                 end
                 LNP64_OP_AWAIT_EX: begin
@@ -2075,7 +2103,17 @@ module lnp64_core_tile #(
         static_fd_buf_next_word_index = sram_word_index(fd_buf_addr + (64'd8 - {61'd0, fd_buf_addr[2:0]}));
         static_fd_buf_byte_lane = fd_buf_addr[2:0];
         static_fd_write_value = load_double_unaligned(fd_buf_addr);
-        if (raw_opcode == 8'h2e || raw_opcode == 8'h6f || raw_opcode == 8'h71) begin
+        // EP-I-full wait verb: resolve the waitset (gpr[rs1] -> entries_ptr/count
+        // -> entry0{handle,events}). Single-entry; entries beyond [0] are
+        // M16-engine-modeled, not in the core datapath.
+        wait_set_ptr     = gpr[dec.rs1];
+        wait_entries_ptr = load_double_unaligned(wait_set_ptr);
+        wait_count       = load_double_unaligned(wait_set_ptr + 64'd8);
+        wait_handle      = load_double_unaligned(wait_entries_ptr);
+        wait_events      = load_double_unaligned(wait_entries_ptr + 64'd8);
+        if (raw_opcode == 8'h86) begin
+            await_fd = fdr_value_fd(wait_handle);
+        end else if (raw_opcode == 8'h2e || raw_opcode == 8'h6f || raw_opcode == 8'h71) begin
             await_fd = dec.rs1;
         end else begin
             await_fd = fdr_value_fd(gpr[dec.rs1]);
@@ -2095,6 +2133,18 @@ module lnp64_core_tile #(
                     await_queue_slot < FDR_SLOT_COUNT &&
                     pipe_payload_valid[await_queue_slot]);
         end
+        // wait revents (POSIX poll semantics, mirroring poll_fd_index_mask_raw):
+        // a bad/revoked/closed handle or one lacking the POLL right reports
+        // POLLNVAL (32); otherwise POLLIN (1) iff requested and read-ready. (Only
+        // POLLIN is exercised by cosim; POLLOUT/write-readiness is engine-modeled.)
+        if (!await_fd_in_range || !fdr_valid[await_fd] || fdr_revoked[await_fd] ||
+            ((fdr_rights[await_fd] & 64'd16) == 64'd0)) begin
+            wait_revents = 64'd32;
+        end else begin
+            wait_revents = ((wait_events & 64'd1) != 64'd0 && await_fd_ready) ? 64'd1 : 64'd0;
+        end
+        wait_ready_count = (wait_count == 64'd0) ? 64'd0 :
+            ((wait_revents != 64'd0) ? 64'd1 : 64'd0);
         if (raw_opcode == 8'h2f) begin
             call_gate_fd = dec.rs1;
         end else begin
@@ -3785,6 +3835,28 @@ module lnp64_core_tile #(
                                     errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_WAIT: begin
+                                // Non-blocking poll of a single-entry waitset:
+                                // write revents back to entry[0].revents, return
+                                // the ready count. (Multi-entry / blocking-park is
+                                // M16-engine-modeled, not in the core datapath.)
+                                if (wait_count > {32'd0, FDR_SLOT_COUNT}) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else begin
+                                    if (wait_count != 64'd0) begin
+                                        store_double_unaligned_next(
+                                            wait_entries_ptr + 64'd16, wait_revents);
+                                        dcache_writeback <= 1'b1;
+                                    end
+                                    gpr[dec.rd] <= wait_ready_count;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;

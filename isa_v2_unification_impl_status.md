@@ -461,15 +461,18 @@ emulator already handles it); document the RTL limitation. This mirrors EP-I-lit
 incremental scoping.
 
 Sub-steps (each a gated commit — tasks #16–#19):
-- **a. RTL wait verb (0x86).** New `LNP64_OP_WAIT` microcode (pkg+schema); decode
-  0x86→WAIT; execute: waitset double-indirection (`gpr[rs1]`=waitset →
-  `entries_ptr`[0]/`count`[8] → entry{handle@0, events@8, revents@16}),
-  `fd=fdr_value_fd(handle)`, reuse `await_fd` readiness, **store revents to
-  entry[16]**, result = ready count. *Design note:* this is the first op needing
-  **chained memory loads** (waitset ptr → entries_ptr → entry fields) feeding a
-  store — the current datapath does single-level indirection, so the load-address
-  chaining needs explicit handling. Validate with a wait-over-pipe/event cosim
-  smoke. (asm/main.rs/emulator already support `wait`.)
+- **a. RTL wait verb (0x86). DONE.** New `LNP64_OP_WAIT` microcode (pkg+schema
+  in lockstep); decode 0x86→WAIT; execute: waitset double-indirection
+  (`gpr[rs1]`=waitset → `entries_ptr`[0]/`count`[8] → entry{handle@0, events@8,
+  revents@16}), `fd=fdr_value_fd(handle)`, reuse `await_fd` readiness, **store
+  revents to entry[16]**, result = ready count → `gpr[rd]`. The chained
+  combinational SRAM reads (waitset → entries_ptr → entry fields) worked directly;
+  POSIX revents semantics mirror `poll_fd_index_mask_raw` (POLLNVAL=32 for
+  bad/closed/no-POLL-right; POLLIN=1 iff requested & read-ready). Single-entry,
+  non-blocking (timeout=0); multi-entry/blocking stays M16-engine-modeled.
+  Validated by `top_wait_poll.s` (poll a ready event-counter via a 1-entry
+  waitset). Adds one opcode (live decode 124→125); the net reduction lands in
+  b/c. Gate: flat_hex cosim 36/36 byte-exact; cargo 489; Redis green; M1+M16 green.
 - **b. Retire await/await_ex/waitable_probe (0x2e/0x71/0x6f).** Migrate
   top_waitable_probe/top_await_ex → wait; migrate libc poll_min await fallback +
   any cargo tests; free the opcodes + Instr variants + asm + decode. D2 + B1.

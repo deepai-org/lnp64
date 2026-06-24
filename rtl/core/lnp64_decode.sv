@@ -189,6 +189,8 @@ module lnp64_decode (
              // with the M16 endpoint engine in EP-I-full.)
              8'h83: begin dec.opcode = LNP64_OP_WRITE_FD; end
              8'h84: begin dec.opcode = LNP64_OP_READ_FD; end
+             // EP-I-full: unified wait verb. rs1 = waitset pointer.
+             8'h86: begin dec.opcode = LNP64_OP_WAIT; end
              8'hcb: begin dec.opcode = LNP64_OP_FUTEX_WAIT; end
              8'hcc: begin dec.opcode = LNP64_OP_FUTEX_WAKE; end
 
@@ -286,6 +288,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_WAITABLE_PROBE ||
+            dec.opcode == LNP64_OP_WAIT ||
             dec.opcode == LNP64_OP_AWAIT_EX ||
             dec.opcode == LNP64_OP_GET_PCR ||
             dec.opcode == LNP64_OP_SET_PCR ||

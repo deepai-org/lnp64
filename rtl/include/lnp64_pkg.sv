@@ -218,6 +218,10 @@ package lnp64_pkg;
         LNP64_OP_SEL_GE       = 16'h00a1,
         LNP64_OP_SEL_LTU      = 16'h00a2,
         LNP64_OP_SEL_GEU      = 16'h00a3,
+        // EP-I-full: the unified `wait` verb (waitset poll). Distinct microcode
+        // from waitable_probe — it reads a {entries_ptr,count} waitset, writes
+        // per-entry revents back to memory, and returns the ready count.
+        LNP64_OP_WAIT         = 16'h00a4,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

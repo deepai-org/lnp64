@@ -327,6 +327,14 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_wait_poll.s",
+      "generated_flat_hex": "tests/rtl/programs/top_wait_poll.hex",
+      "required_features": ["core", "object_ctl_event_counter", "endpoint_verbs", "wait_waitset", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "llvm_mc_programs": [
