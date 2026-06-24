@@ -523,6 +523,10 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "EnvGet": "LNP64_OP_ENV_GET",
         "ReadFd": "LNP64_OP_READ_FD",
         "WriteFd": "LNP64_OP_WRITE_FD",
+        # EP-I-lite: byte-fd IPC verbs route through the WRITE_FD/READ_FD
+        # microcode (send=write, recv=read), matching rtl/core/lnp64_decode.sv.
+        "Send": "LNP64_OP_WRITE_FD",
+        "Recv": "LNP64_OP_READ_FD",
         "LrD": "LNP64_OP_LR_D",
         "ScD": "LNP64_OP_SC_D",
     }

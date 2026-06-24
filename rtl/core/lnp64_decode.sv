@@ -182,6 +182,13 @@ module lnp64_decode (
              8'h80: begin dec.opcode = LNP64_OP_INB; end
              8'h81: begin dec.opcode = LNP64_OP_OUTB; end
              8'h82: begin dec.opcode = LNP64_OP_LOAD_UCODE; end
+             // EP-I-lite: byte-fd IPC verbs delegate to the WRITE_FD/READ_FD
+             // microcode; lnp64_core_tile.sv detects raw 0x83/0x84 and re-sources
+             // operands (handle in rs1, msg descriptor in rs2). send=0x83 is the
+             // write path, recv=0x84 the read path. (wait=0x86/endpoint=0x88 land
+             // with the M16 endpoint engine in EP-I-full.)
+             8'h83: begin dec.opcode = LNP64_OP_WRITE_FD; end
+             8'h84: begin dec.opcode = LNP64_OP_READ_FD; end
              8'hcb: begin dec.opcode = LNP64_OP_FUTEX_WAIT; end
              8'hcc: begin dec.opcode = LNP64_OP_FUTEX_WAKE; end
 

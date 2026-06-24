@@ -291,4 +291,43 @@ runs them. Corrected order (additive → subtractive → heavyweight freeze):
    cosim.
 
 F1 status: step 1 done (0x70/0x72 freed, commit bcc16a0). EP-G/EP-H done; Redis
-runs on the verbs. Next action: EP-I-lite.
+runs on the verbs. Next action: F1-step-2 (0x3b/0x3c).
+
+## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
+
+Landed as one gated commit. The byte-fd IPC verbs now execute in the RTL:
+
+- **No new pkg/schema opcodes.** Realizing the "operand-sourcing is the only
+  fork" rule *means* reusing the existing microcode: `lnp64_decode.sv` maps raw
+  `0x83→LNP64_OP_WRITE_FD` (send) and `0x84→LNP64_OP_READ_FD` (recv). Adding new
+  opcodes would have forced new execute arms = a parallel datapath, which is
+  exactly what the rule forbids.
+- **The fork is three signals.** `lnp64_core_tile.sv` computes `verb_form` from
+  the raw opcode and muxes `static_fd` (verb: `fdr_value_fd(gpr[rs1])`),
+  `fd_buf_addr` (verb: descriptor `[0]=bytes_ptr`), and `fd_len` (verb:
+  descriptor `[8]=bytes_len`). Every downstream consumer (errno, result_value,
+  the sequential pipe/SRAM/event-counter/timer store-load) reads those three
+  signals, so the datapath is shared verbatim with read_fd/write_fd.
+- **Result ABI.** Byte-fd ops return the transfer count in r2 (the existing v2
+  return-reg convention); RTL-targeted verb programs use `rd=2` so the trace
+  result_reg (`flat_retire_result_reg(raw,rd)=rd`) and the sequential `gpr[2]`
+  write agree, byte-exact with the emulator's `result=rd` write.
+- **toolchain:** `main.rs` flat-enc arms for Send/Recv/Wait (`enc_rrr 0x83/0x84/
+  0x86`); asm + emulator already supported the verbs.
+- **Validation:** `tests/rtl/programs/top_pipe_verb_push_pull.s` (new, in
+  `flat_hex_programs`) — send a byte over a pipe writer fd, recv it from the
+  reader fd, both via descriptors. Byte-exact. This is the program F1-step-2
+  migrates `top_pipe_push_pull` onto (one test, two jobs).
+- **Gate:** clean-build `flat_hex_programs` cosim **36/36 byte-exact** (was 35),
+  cargo **489**, Redis green (emulator path untouched). M1–M16 unaffected by
+  construction: their engine filelists contain no core_tile/decode; the M1
+  top-level refinement runs through the cosim and stayed green.
+
+**Scope note — WAIT/ENDPOINT_CREATE deferred to EP-I-full (deliberate).** `wait`
+(0x86) is *not* a pure operand-mux of `waitable_probe`: it iterates a waitset
+descriptor `{entries_ptr,count}` and writes `revents` back into each entry — a
+distinct side-effect shape. Forcing it through waitable_probe would violate the
+shared-datapath invariant, so it lands with the M16 endpoint engine (which models
+waitsets natively). `endpoint_create` (0x88) likewise belongs with the
+Memory-backed arm. The byte-fd smoke needs neither; `main.rs` still encodes
+`wait` (0x86) for the emulator/libc path (Redis), it just has no RTL decode yet.

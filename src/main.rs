@@ -621,6 +621,15 @@ fn encode_flat_exec_instr(
         Instr::LoadUcode(buf, len) => Ok(vec![enc_rrr(0x82, *buf, *len, Reg(0))]),
         Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
         Instr::ReadFd(fd, buf, len) => Ok(vec![enc_rrr(0x2d, Reg(fd.0), *buf, *len)]),
+        // Unified endpoint IPC verbs (Phase 3): result=rd, ep handle=rs1, msg
+        // descriptor pointer=rs2. send/recv route over byte-fds in the RTL via
+        // the WRITE_FD/READ_FD datapath (EP-I-lite); wait is emulator/libc-only
+        // until the M16 endpoint engine lands (EP-I-full).
+        Instr::Send(result, ep, desc) => Ok(vec![enc_rrr(0x83, *result, *ep, *desc)]),
+        Instr::Recv(result, ep, desc) => Ok(vec![enc_rrr(0x84, *result, *ep, *desc)]),
+        Instr::Wait(result, waitset, timeout) => {
+            Ok(vec![enc_rrr(0x86, *result, *waitset, *timeout)])
+        }
         Instr::Await(result, fd, mask) => Ok(vec![enc_rrr(0x2e, *result, Reg(fd.0), *mask)]),
         Instr::AwaitDyn(result, fd_reg, mask, timeout) => Ok(vec![enc_rrrr(0x4d, *result, *fd_reg, *mask, *timeout)]),
         Instr::AwaitEx(result, fd, argblock) => {
