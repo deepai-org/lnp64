@@ -264,7 +264,11 @@ endpoint; the formerly-reserved `ring_enter` is **dropped**).
 `[8]=bytes_len` (send in; recv buffer-cap in / actual out), `[16]=caps_ptr`
 (array of u64 cap handles), `[24]=caps_len` (send #caps; recv buffer-cap in /
 actual out). Caps in a message are cap-table handles resolved against the
-*sender's* table and installed into the *receiver's* by the engine.
+*sender's* table and installed into the *receiver's* by the engine. **Single form
+only** — `send`/`recv` always take `(rd, ep, msgdesc)`; a register-form variant
+(`fd/ptr/len` in GPRs via a form bit) was specced and rejected (saved ~0.034% code
+size, cost a second operand-type + builtin + dual-form proof — net loss under the
+simplicity metric). See `unified_object_model.md` Resolved decisions #4.
 
 ## Removed in v2 (no trace retained)
 

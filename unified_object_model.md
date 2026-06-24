@@ -134,6 +134,35 @@ baked into instruction timing.
   `cap_revoke`, close. These manage the cap table, not transfer.
 - **Signals = the async-upcall mode of an endpoint** (§6).
 
+### The message descriptor — the one universal IPC type (the load-bearing art-project surface)
+
+There is **one** message descriptor, and every verb plus every libc transfer entry
+(`write`/`read`/`send`/`recv`/`sendmsg`/`recvmsg`) populates the **same struct**. With the
+register-form fast path rejected (see Resolved decisions #4), `send`/`recv` take operands
+`(result, ep, desc)` and *nothing else* — so this layout is where the cleanliness budget is
+spent. Minimal, self-documenting, no more fields than the four verbs genuinely need:
+
+| Offset | Field | u64 meaning |
+| --- | --- | --- |
+| 0 | `bytes_ptr` | payload / receive-buffer address |
+| 8 | `bytes_len` | send length; on `recv`, buffer capacity in / actual bytes out |
+| 16 | `caps_ptr` | address of a `u64` capability-handle array (`SCM_RIGHTS`) |
+| 24 | `caps_len` | send #caps; on `recv`, array capacity in / actual #caps out |
+
+Four `u64`, 32 bytes (`src/emulator.rs` `MSG_DESC_*`). One format covers both halves of the
+unification concretely:
+
+- **byte-fd transfer** (`write`/`read`, the pipe/fd path): `bytes_ptr`/`bytes_len`, `caps_len = 0`.
+- **capability passing** (`sendmsg`/`recvmsg` with `SCM_RIGHTS`): the `caps_*` vector — caps
+  resolve against the *sender's* table, install into the *receiver's* (names-are-data, §10).
+
+This is the unification bonus made concrete: libc's four transfer functions differ only in
+which fields they set, so the shims stay thin and the rump/Linux seam maps **one** message
+shape, not several. **`flags` is the single reserved extension** (offset 32) for POSIX
+`send`/`recv` flags (`MSG_DONTWAIT`/`MSG_PEEK`/…) and a scatter bit (reinterpret `bytes_ptr`
+as an `iovec` array for `readv`/`writev`) — added **only when a verb needs it**, never as
+dead weight ahead of time.
+
 ### The collapse (opcode → verb)
 
 | Verb / role | Subsumes (current opcodes) | Status |
@@ -346,6 +375,14 @@ transitional frozen into RTL before its proof (live status: the impl-status trac
    Continuation Endpoint; its backing decides wake/count/queue" (§5).
 3. **One taxonomy.** Endpoints are `Backing {Thread, Memory, Register} × Producer
    {software, hardware}` (§2); all legacy profiles are points in it.
+4. **One message-descriptor form — no register-form fast path.** `send`/`recv` take
+   `(result, ep, desc)`; operands are *always* the single 4-field descriptor above. A
+   register-form variant (`fd/ptr/len` in GPRs, selected by a form bit) was specced and
+   **rejected**: it recovered only ~0.034% corpus code size (measured: Redis+libc 351,210 →
+   351,328) while adding a second operand-form *type*, a second libc builtin, and a dual-form
+   M16 proof obligation — a net loss under the project's simplicity metric (fewer
+   opcodes/types + concept-unity over code density). One form keeps the descriptor *the*
+   universal IPC type and M16 freezes against a single encoding.
 
 Organizing principle: **the synchronous gate is the primitive; everything async is a
 Memory- or Register-backed endpoint reached by the same bounded rendezvous.**
