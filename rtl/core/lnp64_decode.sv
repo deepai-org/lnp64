@@ -147,8 +147,8 @@ module lnp64_decode (
              8'h38: begin dec.opcode = LNP64_OP_GET_ERRNO; end
              8'h39: begin dec.opcode = LNP64_OP_SET_ERRNO; end
              8'h3a: begin dec.opcode = LNP64_OP_EXIT; end
-             8'h3b: begin dec.opcode = LNP64_OP_PULL; end
-             8'h3c: begin dec.opcode = LNP64_OP_PUSH; end
+             // 0x3b/0x3c (ReadFdDyn/WriteFdDyn twins) retired in F1-step-2 — the
+             // unified recv/send verbs (0x84/0x83) cover byte-fd transfer.
              8'h47: begin dec.opcode = LNP64_OP_ALLOC; end
              8'h48: begin dec.opcode = LNP64_OP_ALLOC_SIZE; end
              8'h49: begin dec.opcode = LNP64_OP_FREE; end

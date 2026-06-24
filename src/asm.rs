@@ -394,10 +394,6 @@ impl Parser {
                 arity(3)?;
                 Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "READ_FD_DYN" => {
-                arity(3)?;
-                Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
-            }
             "PREAD_FD" => {
                 arity(4)?;
                 Instr::PreadFd(
@@ -435,10 +431,6 @@ impl Parser {
             "WRITE_FD" => {
                 arity(3)?;
                 Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
-            }
-            "WRITE_FD_DYN" => {
-                arity(3)?;
-                Instr::WriteFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "PWRITE_FD" => {
                 arity(4)?;
@@ -1236,23 +1228,29 @@ mod tests {
     }
 
     #[test]
-    fn parses_legacy_fd_dyn_aliases() {
-        // F1 retired the PULL_DYN/PUSH_DYN twins; READ_FD_DYN/WRITE_FD_DYN remain.
+    fn parses_endpoint_verbs() {
+        // F1-step-2 retired READ_FD_DYN/WRITE_FD_DYN (and the PULL_DYN/PUSH_DYN
+        // twins): byte-fd recv/send go through the unified send/recv/wait verbs.
         let program = Program::parse(
             r#"
             .text
-              READ_FD_DYN r7, r8, r9
-              WRITE_FD_DYN r10, r11, r12
+              SEND r2, r5, r20
+              RECV r2, r6, r21
+              WAIT r7, r5, r6
             "#,
         )
         .unwrap();
         assert!(matches!(
             program.instructions[0],
-            Instr::ReadFdDyn(Reg(7), Reg(8), Reg(9))
+            Instr::Send(Reg(2), Reg(5), Reg(20))
         ));
         assert!(matches!(
             program.instructions[1],
-            Instr::WriteFdDyn(Reg(10), Reg(11), Reg(12))
+            Instr::Recv(Reg(2), Reg(6), Reg(21))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::Wait(Reg(7), Reg(5), Reg(6))
         ));
     }
 

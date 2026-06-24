@@ -2144,8 +2144,8 @@ impl Machine {
             0x38 => Instr::ErrnoGet(a),
             0x39 => Instr::ErrnoSet(a),
             0x3a => Instr::Exit(a),
-            0x3b => Instr::PullDyn(a, b, c, d),
-            0x3c => Instr::PushDyn(a, b, c, d),
+            // 0x3b/0x3c (ReadFdDyn/WriteFdDyn === PullDyn/PushDyn) retired in
+            // F1-step-2 — recv/send over byte-fds (the unified verbs) cover them.
             0x47 => Instr::Alloc(a, b),
             0x48 => Instr::AllocSize(a, b),
             0x49 => Instr::Free(a),
@@ -2822,38 +2822,8 @@ impl Machine {
                 Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 // ISA-v2: the fd operand is a GPR whose *value* is the fd handle
-                // (not a static fd-register index). Resolve it like PullDyn.
+                // (not a static fd-register index).
                 let fd_value = self.read_reg(Reg(fd.0))?;
-                let fd = match self.decode_fd_value(fd_value) {
-                    Ok(fd) => fd,
-                    Err(errno) => {
-                        self.complete_reg_err(result, errno)?;
-                        return Ok(true);
-                    }
-                };
-                if fd == MESSAGE_ENDPOINT_FD {
-                    let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
-                        self.rewind_current_ip_for_block()?;
-                        self.ready.retain(|tid| *tid != self.current_tid);
-                        return Ok(false);
-                    };
-                    self.complete_reg_ok(result, v1)?;
-                    self.write_reg(Reg(30), v2)?;
-                } else {
-                    let addr = self.read_reg(buf)?;
-                    let len = self.read_reg(len)? as usize;
-                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
-                        self.complete_reg_ok(result, count as u64)?;
-                    } else {
-                        let errno = self.process()?.errno;
-                        self.complete_reg_err(result, errno)?;
-                    }
-                }
-            }
-            Instr::PullDyn(result, fd_reg, buf, len) => {
-                Self::ensure_result_reg_writable(result)?;
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                let fd_value = self.read_reg(fd_reg)?;
                 let fd = match self.decode_fd_value(fd_value) {
                     Ok(fd) => fd,
                     Err(errno) => {
@@ -2885,21 +2855,6 @@ impl Machine {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 // ISA-v2: fd operand is a GPR holding the fd handle value.
                 let fd_value = self.read_reg(Reg(fd.0))?;
-                let fd = match self.decode_fd_value(fd_value) {
-                    Ok(fd) => fd,
-                    Err(errno) => {
-                        self.complete_reg_err(result, errno)?;
-                        return Ok(true);
-                    }
-                };
-                let addr = self.read_reg(buf)?;
-                let len = self.read_reg(len)? as usize;
-                self.write_fd_index_to(result, fd, addr, len)?;
-            }
-            Instr::PushDyn(result, fd_reg, buf, len) => {
-                Self::ensure_result_reg_writable(result)?;
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                let fd_value = self.read_reg(fd_reg)?;
                 let fd = match self.decode_fd_value(fd_value) {
                     Ok(fd) => fd,
                     Err(errno) => {
@@ -3144,17 +3099,6 @@ impl Machine {
                     }
                 }
             }
-            Instr::ReadFdDyn(fd_reg, buf, len) => {
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                let fd = self.read_reg(fd_reg)?;
-                let addr = self.read_reg(buf)?;
-                let len = self.read_reg(len)? as usize;
-                if let Some(fd) = self.checked_fd_index(fd)? {
-                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
-                        self.complete_ok(count as u64)?;
-                    }
-                }
-            }
             Instr::PreadFd(fd, buf, len, offset) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 // ISA-v2: fd operand is a GPR holding the fd handle value.
@@ -3211,15 +3155,6 @@ impl Machine {
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd_value)? {
-                    self.write_fd_index(fd, addr, len)?;
-                }
-            }
-            Instr::WriteFdDyn(fd_reg, buf, len) => {
-                self.require_domain_cap(DOMAIN_CAP_IO)?;
-                let fd = self.read_reg(fd_reg)?;
-                let addr = self.read_reg(buf)?;
-                let len = self.read_reg(len)? as usize;
-                if let Some(fd) = self.checked_fd_index(fd)? {
                     self.write_fd_index(fd, addr, len)?;
                 }
             }
@@ -12197,6 +12132,25 @@ mod tests {
         machine.store_u64(desc + MSG_DESC_CAPS_LEN, caps_len).unwrap();
     }
 
+    // F1-step-2: byte-fd recv/send via the unified verbs, preserving the retired
+    // ReadFdDyn/WriteFdDyn(ep, buf, len) shape — result in r2, so these
+    // capability tests keep exercising the full handle-resolution + rights path
+    // end-to-end (decode_fd_value -> read_fd_index/write_fd_index_to). The
+    // descriptor scratch sits above every test buffer; r26 is the desc pointer.
+    fn exec_recv_fd(machine: &mut Machine, ep: Reg, buf: u64, len: u64) {
+        let desc = ARG_BASE + 0x6000;
+        write_msg_desc(machine, desc, buf, len, 0, 0);
+        machine.thread_mut().unwrap().regs[26] = desc;
+        machine.exec(Instr::Recv(Reg(2), ep, Reg(26))).unwrap();
+    }
+
+    fn exec_send_fd(machine: &mut Machine, ep: Reg, buf: u64, len: u64) {
+        let desc = ARG_BASE + 0x6000;
+        write_msg_desc(machine, desc, buf, len, 0, 0);
+        machine.thread_mut().unwrap().regs[26] = desc;
+        machine.exec(Instr::Send(Reg(2), ep, Reg(26))).unwrap();
+    }
+
     #[test]
     fn endpoint_send_recv_roundtrips_bytes() {
         let mut machine = Machine::new(empty_program());
@@ -20744,11 +20698,7 @@ mod tests {
         assert_eq!((second_token & FDR_TOKEN_INDEX_MASK) as usize, first_fd);
 
         machine.thread_mut().unwrap().regs[6] = first_token;
-        machine.thread_mut().unwrap().regs[7] = ARG_BASE;
-        machine.thread_mut().unwrap().regs[8] = 4;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(6), ARG_BASE, 4);
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
@@ -20885,12 +20835,8 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 1);
 
         machine.thread_mut().unwrap().regs[4] = 3;
-        machine.thread_mut().unwrap().regs[5] = ARG_BASE;
-        machine.thread_mut().unwrap().regs[6] = 8;
         machine.thread_mut().unwrap().regs[1] = 1234;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(4), Reg(5), Reg(6)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(4), ARG_BASE, 8);
         assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
     }
@@ -22017,11 +21963,7 @@ mod tests {
         assert_ne!(readonly, -1i64 as u64);
 
         machine.thread_mut().unwrap().regs[5] = readonly;
-        machine.thread_mut().unwrap().regs[6] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[7] = 1;
-        machine
-            .exec(Instr::WriteFdDyn(Reg(5), Reg(6), Reg(7)))
-            .unwrap();
+        exec_send_fd(&mut machine, Reg(5), ARG_BASE + 0x1000, 1);
         assert_eq!(machine.process().unwrap().errno, 1);
 
         machine.store_u64(arg, readonly).unwrap();
@@ -22134,11 +22076,7 @@ mod tests {
         assert_ne!(sealed, -1i64 as u64);
 
         machine.thread_mut().unwrap().regs[6] = sealed;
-        machine.thread_mut().unwrap().regs[7] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[8] = 4;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(6), ARG_BASE + 0x1000, 4);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(machine.thread().unwrap().regs[2], 4);
 
@@ -22195,11 +22133,7 @@ mod tests {
         assert!(machine.thread().unwrap().regs[5] >= 2);
 
         machine.thread_mut().unwrap().regs[6] = child;
-        machine.thread_mut().unwrap().regs[7] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[8] = 1;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(6), ARG_BASE + 0x1000, 1);
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
@@ -22374,11 +22308,7 @@ mod tests {
         );
 
         machine.thread_mut().unwrap().regs[8] = received;
-        machine.thread_mut().unwrap().regs[9] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[10] = 1;
-        machine
-            .exec(Instr::WriteFdDyn(Reg(8), Reg(9), Reg(10)))
-            .unwrap();
+        exec_send_fd(&mut machine, Reg(8), ARG_BASE + 0x1000, 1);
         assert_eq!(machine.process().unwrap().errno, 1);
     }
 
@@ -22490,11 +22420,7 @@ mod tests {
         ));
 
         machine.thread_mut().unwrap().regs[7] = source;
-        machine.thread_mut().unwrap().regs[8] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[9] = 1;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(7), Reg(8), Reg(9)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(7), ARG_BASE + 0x1000, 1);
         assert_eq!(machine.process().unwrap().errno, 116);
 
         machine.store_u64(arg, 3).unwrap();
@@ -22506,11 +22432,7 @@ mod tests {
         assert_ne!(received, -1i64 as u64);
 
         machine.thread_mut().unwrap().regs[11] = received;
-        machine.thread_mut().unwrap().regs[12] = ARG_BASE + 0x1100;
-        machine.thread_mut().unwrap().regs[13] = 1;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(11), Reg(12), Reg(13)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(11), ARG_BASE + 0x1100, 1);
         assert_eq!(machine.thread().unwrap().regs[2], 1);
         assert_eq!(machine.process().unwrap().errno, 0);
     }
@@ -22657,11 +22579,7 @@ mod tests {
         assert!(machine.thread().unwrap().regs[8] >= 2);
 
         machine.thread_mut().unwrap().regs[9] = received;
-        machine.thread_mut().unwrap().regs[10] = ARG_BASE + 0x1000;
-        machine.thread_mut().unwrap().regs[11] = 1;
-        machine
-            .exec(Instr::ReadFdDyn(Reg(9), Reg(10), Reg(11)))
-            .unwrap();
+        exec_recv_fd(&mut machine, Reg(9), ARG_BASE + 0x1000, 1);
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
@@ -24079,11 +23997,7 @@ mod tests {
             assert_ne!(child, -1i64 as u64);
 
             machine.thread_mut().unwrap().regs[5] = child;
-            machine.thread_mut().unwrap().regs[6] = ARG_BASE + 0x4000;
-            machine.thread_mut().unwrap().regs[7] = 1;
-            machine
-                .exec(Instr::ReadFdDyn(Reg(5), Reg(6), Reg(7)))
-                .unwrap();
+            exec_recv_fd(&mut machine, Reg(5), ARG_BASE + 0x4000, 1);
             assert_eq!(machine.process().unwrap().errno, 0);
             assert_eq!(machine.thread().unwrap().regs[2], 1);
 
@@ -24122,11 +24036,7 @@ mod tests {
             machine.cap_revoke(Reg(13), arg).unwrap();
             assert!(machine.thread().unwrap().regs[13] >= 1);
             machine.thread_mut().unwrap().regs[14] = child;
-            machine.thread_mut().unwrap().regs[15] = ARG_BASE + 0x5000;
-            machine.thread_mut().unwrap().regs[16] = 1;
-            machine
-                .exec(Instr::ReadFdDyn(Reg(14), Reg(15), Reg(16)))
-                .unwrap();
+            exec_recv_fd(&mut machine, Reg(14), ARG_BASE + 0x5000, 1);
             assert_eq!(machine.process().unwrap().errno, 116);
             assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         }

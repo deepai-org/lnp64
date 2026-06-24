@@ -2,6 +2,7 @@
 ok_msg: .string "stale fd token ok\n"
 path: .string "Cargo.toml"
 out: .zero 8
+desc: .zero 32
 
 .text
   LI r29, -1
@@ -25,16 +26,24 @@ reopen_same_slot:
   BEQ r5, r29, bad
   BEQ r5, r20, bad
 
+# F1-step-2: recv over the unified verb (READ_FD_DYN/0x3b retired). The msg
+# descriptor names the receive buffer; the endpoint handle is the fd token, so a
+# stale token is rejected by recv's handle resolution exactly as before.
 stale_token_rejected:
   LI r6, out
   LI r7, 4
-  READ_FD_DYN r20, r6, r7
+  LI r9, desc
+  ST [r9, 0], r6        # bytes_ptr = out
+  ST [r9, 8], r7        # bytes_len = 4
+  ST [r9, 16], r0       # caps_ptr = 0
+  ST [r9, 24], r0       # caps_len = 0
+  RECV r2, r20, r9      # recv via the stale token
   ERRNO_GET r8
   LI r1, 116
   BNE r8, r1, bad
 
 fresh_token_still_reads:
-  READ_FD_DYN r5, r6, r7
+  RECV r2, r5, r9       # recv via the freshly reopened token
   BNE r1, r7, bad
 
 done:

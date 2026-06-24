@@ -1496,13 +1496,6 @@ module lnp64_core_tile #(
                 LNP64_OP_PULL: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_OK;
-                    end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
-                        flat_retire_errno_value = RTL_ERR_ESTALE;
-                    end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
-                        fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
-                        fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
-                        ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
-                        flat_retire_errno_value = LNP64_ERR_OK;
                     end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
                         fdr_revoked[pipe_fd] || fdr_kind[pipe_fd] != FDR_KIND_PIPE_READER ||
                         ((fdr_rights[pipe_fd] & 64'd1) == 64'd0)) begin
@@ -1783,13 +1776,6 @@ module lnp64_core_tile #(
                 LNP64_OP_PULL: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         result = 64'd0;
-                    end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
-                        result = 64'hffff_ffff_ffff_ffff;
-                    end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
-                        fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
-                        fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
-                        ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
-                        result = dynamic_file_read_count;
                     end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] || fdr_revoked[pipe_fd] ||
                         fdr_kind[pipe_fd] != FDR_KIND_PIPE_READER ||
                         ((fdr_rights[pipe_fd] & 64'd1) == 64'd0) || gpr[dec.rs3] > 64'd8) begin
@@ -3934,17 +3920,6 @@ module lnp64_core_tile #(
                             LNP64_OP_PULL: begin
                                 if (gpr[dec.rs3] == 64'd0) begin
                                     gpr[dec.rd] <= 64'd0;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= RTL_ERR_ESTALE;
-                                end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
-                                    fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
-                                    fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
-                                    ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
-                                    store_double_unaligned_next(gpr[dec.rs2], 64'h0000_0000_6361_705b);
-                                    dcache_writeback <= 1'b1;
-                                    gpr[dec.rd] <= dynamic_file_read_count;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
                                     fdr_revoked[pipe_fd] ||

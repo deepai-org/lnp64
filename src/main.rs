@@ -651,10 +651,6 @@ fn encode_flat_exec_instr(
         Instr::Push(result, fd, buf, len) => {
             Ok(vec![enc_rrrr(0x2c, *result, Reg(fd.0), *buf, *len)])
         }
-        Instr::ReadFdDyn(fd_reg, buf, len) => Ok(vec![enc_rrrr(0x3b, Reg(1), *fd_reg, *buf, *len)]),
-        Instr::WriteFdDyn(fd_reg, buf, len) => {
-            Ok(vec![enc_rrrr(0x3c, Reg(1), *fd_reg, *buf, *len)])
-        }
         Instr::OpenFdDyn(dst, path, flags) => Ok(vec![enc_rrr(0x6d, *dst, *path, *flags)]),
         Instr::OpenDirDyn(dst, path, flags) => Ok(vec![enc_rrr(0x73, *dst, *path, *flags)]),
         Instr::MkdirPathAt(dir, path, mode) => Ok(vec![enc_rrr(0x74, *dir, *path, *mode)]),
@@ -1431,22 +1427,20 @@ mod tests {
     }
 
     #[test]
-    fn asm_flat_exec_encodes_dynamic_fd_push_pull() {
+    fn asm_flat_exec_encodes_endpoint_verbs() {
+        // F1-step-2: byte-fd transfer is the send/recv verbs (0x83/0x84); the
+        // WRITE_FD_DYN/READ_FD_DYN forms (0x3b/0x3c) are retired. result=rd,
+        // ep handle=rs1, msg descriptor pointer=rs2.
         let source = r#"
             .text
-              LI r4, 4
-              LI r12, 80
-              LI r13, 1
-              WRITE_FD_DYN r4, r12, r13
-              LI r3, 3
-              LI r15, 88
-              READ_FD_DYN r3, r15, r13
+              SEND r2, r5, r20
+              RECV r2, r6, r21
               EXIT r1
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(hex, "a020000000010000\na060000000140000\na068000000004000\n3c0918d000000000\na01800000000c000\na078000000160000\n3b08ded000000000\n3a08000000000000\n");
+        assert_eq!(hex, "8311680000000000\n8411aa0000000000\n3a08000000000000\n");
     }
 
     #[test]

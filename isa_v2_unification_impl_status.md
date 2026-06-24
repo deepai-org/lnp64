@@ -290,8 +290,65 @@ runs them. Corrected order (additive → subtractive → heavyweight freeze):
    the same dispatch) against the final collapsed ISA, gated on M16 typed-trace +
    cosim.
 
-F1 status: step 1 done (0x70/0x72 freed, commit bcc16a0). EP-G/EP-H done; Redis
-runs on the verbs. Next action: F1-step-2 (0x3b/0x3c).
+F1 status: step 1 done (0x70/0x72 freed, commit bcc16a0); step 2 done (0x3b/0x3c
+freed — see below). EP-G/EP-H done; Redis runs on the verbs. Next action: F2
+(0x4e call_cap→gate_call), then the step-3 legacy sweep.
+
+## B1 — ISA collapse burndown (the "fewer instructions" goal, measured)
+
+Two metrics, recorded as each F1/F2 step lands. The shrink is in the **opcode
+surface** (fewer distinct opcodes to implement + verify in silicon); per-call
+**code size** can rise slightly because a verb carries its operands in an
+in-memory msg descriptor instead of packed register fields — that setup cost is
+built once per call site and amortizes across repeated transfers (e.g. a libc
+read/write shim or a loop).
+
+Opcode-surface metric (opcodes freed = removed from every decoder/encoder, value
+reusable):
+
+| step      | opcodes freed            | mnemonics retired                         | live RTL decode opcodes |
+|-----------|--------------------------|-------------------------------------------|-------------------------|
+| F1-step-1 | 0x70, 0x72               | POLL_FD_DYN, AWAIT_EX_DYN, WAITABLE_PROBE_DYN | (—)                 |
+| F1-step-2 | 0x3b, 0x3c               | READ_FD_DYN, WRITE_FD_DYN, PULL_DYN, PUSH_DYN  | 125                 |
+| F2        | 0x4e (call_cap dup)      | (pending)                                 | (pending)               |
+| step-3    | read_fd/write_fd/push/pull/cap_send/cap_recv/await*/waitable_probe* | (pending) | (pending)    |
+
+Running total freed after F1-step-2: **4 opcodes** (0x3b, 0x3c, 0x70, 0x72).
+The D2 guard `scripts/check_retired_mnemonics.sh` enforces that no source emits a
+retired mnemonic (decode removal alone breaks only at assemble/link/run time).
+
+Corpus metric (instruction words, before = legacy form, after = verbs):
+
+| program                       | before | after | Δ    | note                                  |
+|-------------------------------|-------:|------:|-----:|---------------------------------------|
+| top_pipe_push_pull (1 send + 1 recv) | 32 | 44 | +12 | 4 descriptor stores/verb, not amortized |
+
+## F1-step-2: DONE (0x3b/0x3c retired; byte-fd transfer is recv/send)
+
+- **RTL:** removed `0x3b/0x3c` decode arms (`lnp64_decode.sv`) and the now-dead
+  `raw_opcode == 8'h3b` dynamic-pull branches in `lnp64_core_tile.sv` (errno,
+  result_value, sequential). `pipe_fd` etc. stay live via the static `0x2b` PULL.
+- **emulator:** removed the `0x3b/0x3c` flat-decode arms and the
+  PullDyn/PushDyn/ReadFdDyn/WriteFdDyn handlers. The private helpers
+  `read_fd_index` / `write_fd_index` / `write_fd_index_to` stay — the verb byte
+  path and the static fd ops call them (removing the opcode ≠ removing behavior).
+  Inbox/MESSAGE_ENDPOINT_FD reads are preserved by the static `Pull` handler.
+- **isa.rs:** removed the `ReadFdDyn`/`WriteFdDyn`/`PullDyn`/`PushDyn` variants
+  (Rust's exhaustive match confirmed every site was updated).
+- **toolchain:** removed `READ_FD_DYN`/`WRITE_FD_DYN` asm mnemonics + the
+  `main.rs` flat-enc arms.
+- **tests:** the ~11 capability cargo tests that read/wrote an fd via ReadFdDyn/
+  WriteFdDyn now go through `recv`/`send` (new `exec_recv_fd`/`exec_send_fd` test
+  helpers build a one-shot descriptor; result in r2) — verified byte-identical
+  errno/r2 (stale→116, EPERM→1, success→count) since recv resolves the handle via
+  `decode_fd_value` then `read_fd_index`, the same path. asm + main.rs encoding
+  tests re-pointed to the verbs.
+- **programs:** `top_pipe_push_pull.s` migrated in place to send/recv (the
+  EP-I-lite `top_pipe_verb_push_pull.s` was folded into it — one test, two jobs);
+  `demos/stale_fd_token.s` migrated to recv.
+- **D2 guard:** `scripts/check_retired_mnemonics.sh` added and green.
+- **Gate:** clean-build `flat_hex_programs` cosim 35/35 byte-exact; cargo 489;
+  Redis green; M1–M16 unaffected (engine filelists exclude core_tile/decode).
 
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 
