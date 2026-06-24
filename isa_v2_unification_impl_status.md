@@ -319,9 +319,32 @@ retired mnemonic (decode removal alone breaks only at assemble/link/run time).
 
 Corpus metric (instruction words, before = legacy form, after = verbs):
 
-| program                       | before | after | Δ    | note                                  |
-|-------------------------------|-------:|------:|-----:|---------------------------------------|
-| top_pipe_push_pull (1 send + 1 recv) | 32 | 44 | +12 | 4 descriptor stores/verb, not amortized |
+| corpus                        | before  | after   | Δ     | %       | note                                                  |
+|-------------------------------|--------:|--------:|------:|--------:|-------------------------------------------------------|
+| top_pipe_push_pull (1 send+1 recv) | 32 | 44 | +12 | +37%   | microbenchmark: ~12-word descriptor build, 0 amortization |
+| Redis 7.0.15 + minilibc       | 351,210 | 351,328 | +118  | +0.034% | the real verdict — flat                               |
+
+The Redis number is the one that answers "does this make real code longer or
+shorter?" — and the answer is **flat (+0.034%)**. It's the *entire* corpus delta,
+not a sample: the verb migration (EP-H, commit 2110c4e) changed only the libc
+shim functions, and Redis's hundreds of read/write/poll call sites are unchanged
+`call` instructions. The descriptor/waitset build is *inside* the shim (once per
+function — read/write/poll/epoll/select/kqueue), so it is loop-invariant in the
+hot paths and does not scale with call-site count. Measured by recompiling the
+EP-H-parent shim sources vs current with the production flags:
+`liblnp64_fd_min.o` 506→518 (+12), `liblnp64_poll_min.o` 1733→1839 (+106).
+
+The microbenchmark's +37% is a fixed descriptor-build cost with nothing to
+amortize against in a 32-word program that does one transfer; it is *not*
+representative of real code, as the Redis row shows. The code-size cost of the
+unified model is therefore already fully paid (it lived in this read/write→verb
+migration); the remaining collapse steps (F2 0x4e dup-removal, the step-3 sweep
+of already-migrated opcodes) are pure opcode-surface reduction with **zero**
+further code-size cost. Reserve lever, deploy only if a future corpus row regresses
+materially: a register-form fast path for the small-message case (fd+ptr+len in
+registers) alongside the memory descriptor for the general case — recovers compact
+encoding at the cost of re-introducing one encoding form. Not justified by the data
+today.
 
 ## F1-step-2: DONE (0x3b/0x3c retired; byte-fd transfer is recv/send)
 
