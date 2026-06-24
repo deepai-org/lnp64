@@ -444,6 +444,42 @@ waitable opcodes retire *as part of* EP-I-full (that step adds the RTL wait +
 cap-FIFO verb paths they need); the byte-fd groups (push/pull, read_fd/write_fd)
 retire via emitter migration, independent of the freeze.
 
+## EP-I-full plan (NEXT — decision A: freeze + biggest yardstick win together)
+
+Adds the RTL `wait` + cap-FIFO verb paths and retires the 5 opcodes they subsume
+(cap_send/cap_recv/await/await_ex/waitable_probe), then freezes M16. Guardrails:
+freeze against the single descriptor form (Resolved decision #4); D2 guard + B1 row
+per retired opcode (live decode opcodes 124 → ~119); confirm the later byte-fd
+mop-up is dead-branch-only (no encoding change) so "M16 unaffected" holds.
+
+**Key tractability insight:** every gated cosim program touches a *single* fd/cap
+(`top_waitable_probe`/`top_await_ex` probe one fd; `top_cap_*` move one cap), so
+the RTL needs only **single-entry waitset / single-cap** paths — reuse the
+existing `await_fd_ready` readiness signals + add a revents memory writeback. The
+general multi-entry waitset / multi-cap case stays **M16-engine-modeled** (the
+emulator already handles it); document the RTL limitation. This mirrors EP-I-lite's
+incremental scoping.
+
+Sub-steps (each a gated commit — tasks #16–#19):
+- **a. RTL wait verb (0x86).** New `LNP64_OP_WAIT` microcode (pkg+schema); decode
+  0x86→WAIT; execute: waitset double-indirection (`gpr[rs1]`=waitset →
+  `entries_ptr`[0]/`count`[8] → entry{handle@0, events@8, revents@16}),
+  `fd=fdr_value_fd(handle)`, reuse `await_fd` readiness, **store revents to
+  entry[16]**, result = ready count. *Design note:* this is the first op needing
+  **chained memory loads** (waitset ptr → entries_ptr → entry fields) feeding a
+  store — the current datapath does single-level indirection, so the load-address
+  chaining needs explicit handling. Validate with a wait-over-pipe/event cosim
+  smoke. (asm/main.rs/emulator already support `wait`.)
+- **b. Retire await/await_ex/waitable_probe (0x2e/0x71/0x6f).** Migrate
+  top_waitable_probe/top_await_ex → wait; migrate libc poll_min await fallback +
+  any cargo tests; free the opcodes + Instr variants + asm + decode. D2 + B1.
+- **c. RTL cap-FIFO verb send/recv + retire cap_send/cap_recv (0x51/0x52).**
+  Extend the verb send/recv path with the cap-FIFO (caps_len≠0): resolve handle on
+  send / install on recv, mirroring emulator EP-G; single-cap suffices for cosim.
+  Migrate top_cap_* + cargo cap tests → send/recv-with-caps; free 0x51/0x52. D2 + B1.
+- **d. Freeze M16** against the final descriptor encoding; confirm it covers both
+  single-entry (RTL) and general (engine) transitions. Mark EP-I frozen.
+
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 
 Landed as one gated commit. The byte-fd IPC verbs now execute in the RTL:
