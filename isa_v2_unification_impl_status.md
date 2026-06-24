@@ -524,6 +524,24 @@ independently whenever, since the RTL verb byte path already covers them.
      commit (both 0x2e + 0x4d → wait) after the rebuild, so the family collapses
      atomically. −2 (→119).
 
+   **Part 1/2 DONE (56a4c08):** poll_min's 5 __lnp_await sites -> lnp64_wait_one
+   helper (1-entry waitset + __lnp_wait), per-site semantics preserved; sysroot
+   libc + Redis rebuilt -> redis-server.elf emits 0 await (was 5); Redis green;
+   additive (no opcode freed yet). Build-pipeline note: Redis links liblnp64.a from
+   the sysroot, so a libc change needs `bash scripts/package_lnp64_sysroot.sh` then
+   `bash scripts/build_redis.sh`, both `docker run` as ROOT (artifacts root-owned;
+   --user hits EPERM).
+   **Part 2/2 TODO (heavy/subtle): free 0x2e + 0x4d.** Migrate ~7 parking cargo
+   tests + await_timer.s + asm AWAIT; remove Await/AwaitDyn variants + decode +
+   handlers + RTL + pkg/schema; D2 += AWAIT. NON-MECHANICAL: Await parks with
+   Some(result) and wakes by directly completing the result reg (revoked-poll-right
+   wake -> regs=-1/errno=1); wait parks with None and RE-EXECUTES on wake (re-poll ->
+   revents=POLLNVAL/ready_count=1/errno=0). Wake observables DIFFER -> re-author the
+   wake tests to wait's re-execute model (assert revents/ready-count), do not swap
+   mechanically; Await-internal-only tests get removed with coverage moved to a wait
+   test. -2 (->119).
+
+
 ## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
 The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
