@@ -37,8 +37,8 @@ zero_timeout_dynamic_no_ready:
   LI r1, 1
   ST [r22, 0], r1
   ST [r22, 8], r20
-  LI r16, 4
-  AWAIT_EX r17, r16, r22
+  LI r4, 4
+  AWAIT_EX r17, fd4, r22
   BNE r17, r0, bad
 
 invalid_mode:

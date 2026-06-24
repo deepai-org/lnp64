@@ -2187,9 +2187,9 @@ impl Machine {
             0x6d => Instr::OpenFdDyn(a, b, c),
             0x6e => Instr::FdCloseDyn(a),
             0x6f => Instr::WaitableProbe(a, FdReg(b.0), c),
-            0x70 => Instr::WaitableProbeDyn(a, b, c),
+            // 0x70/0x72 (WaitableProbeDyn/AwaitExDyn) retired in F1 — the static
+            // waitable_probe/await_ex (GPR-handle) and the `wait` verb cover them.
             0x71 => Instr::AwaitEx(a, FdReg(b.0), c),
-            0x72 => Instr::AwaitExDyn(a, b, c),
             0x73 => Instr::OpenDirDyn(a, b, c),
             0x74 => Instr::MkdirPathAt(a, b, c),
             0x75 => Instr::RenamePathAt(a, b, c, d),
@@ -2962,30 +2962,12 @@ impl Machine {
                     Err(errno) => self.complete_reg_negative_errno(result, errno)?,
                 };
             }
-            Instr::AwaitExDyn(result, fd_reg, argblock) => {
-                Self::ensure_result_reg_writable(result)?;
-                let fd = self.read_reg(fd_reg)?;
-                let argblock = self.read_reg(argblock)?;
-                match self.decode_fd_value(fd) {
-                    Ok(fd) => self.await_ex_index(result, fd, argblock)?,
-                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
-                };
-            }
             Instr::WaitableProbe(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
                 // ISA-v2: fd operand is a GPR holding the fd handle value.
                 let fd_value = self.read_reg(Reg(fd.0))?;
                 let events = self.read_reg(events)?;
                 match self.decode_fd_value(fd_value) {
-                    Ok(fd) => self.waitable_probe_index(result, fd, events)?,
-                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
-                };
-            }
-            Instr::WaitableProbeDyn(result, fd_reg, events) => {
-                Self::ensure_result_reg_writable(result)?;
-                let fd = self.read_reg(fd_reg)?;
-                let events = self.read_reg(events)?;
-                match self.decode_fd_value(fd) {
                     Ok(fd) => self.waitable_probe_index(result, fd, events)?,
                     Err(errno) => self.complete_reg_negative_errno(result, errno)?,
                 };
@@ -11248,7 +11230,7 @@ mod tests {
 
         assert!(
             machine
-                .exec(Instr::PushDyn(Reg(9), Reg(5), Reg(6), Reg(7)))
+                .exec(Instr::Push(Reg(9), FdReg(5), Reg(6), Reg(7)))
                 .unwrap()
         );
 
@@ -21072,7 +21054,7 @@ mod tests {
         machine.set_errno(124).unwrap();
 
         let err = machine
-            .exec(Instr::WaitableProbeDyn(Reg(31), Reg(4), Reg(5)))
+            .exec(Instr::WaitableProbe(Reg(31), FdReg(4), Reg(5)))
             .unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
@@ -21102,7 +21084,7 @@ mod tests {
         machine.set_errno(124).unwrap();
 
         machine
-            .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
+            .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[8], 0);
@@ -21142,7 +21124,7 @@ mod tests {
 
         assert!(
             machine
-                .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
+                .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
                 .unwrap()
         );
 
@@ -21174,7 +21156,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
 
         machine
-            .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
+            .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[8], u64::MAX);
@@ -21215,7 +21197,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[6] = 6;
 
         machine
-            .exec(Instr::AwaitExDyn(Reg(8), Reg(6), Reg(2)))
+            .exec(Instr::AwaitEx(Reg(8), FdReg(6), Reg(2)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[8], 0);

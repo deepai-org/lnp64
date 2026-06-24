@@ -325,29 +325,16 @@ impl Parser {
                     Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?, Reg(0))
                 }
             }
+            // F1: the dynamic await_ex/waitable_probe twins are retired. The
+            // fd operand is an `fdN` register holding the handle (the static
+            // form already reads the GPR); the `wait` verb covers the rest.
             "AWAIT_EX" => {
                 arity(3)?;
-                if args[1].starts_with("fd") {
-                    Instr::AwaitEx(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
-                } else {
-                    Instr::AwaitExDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
-                }
+                Instr::AwaitEx(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
             }
-            "WAITABLE_PROBE" => {
-                arity(3)?;
-                if args[1].starts_with("fd") {
-                    Instr::WaitableProbe(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
-                } else {
-                    Instr::WaitableProbeDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
-                }
-            }
-            "POLL_FD" => {
+            "WAITABLE_PROBE" | "POLL_FD" => {
                 arity(3)?;
                 Instr::WaitableProbe(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
-            }
-            "POLL_FD_DYN" => {
-                arity(3)?;
-                Instr::WaitableProbeDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "ALLOC" => {
                 arity(2)?;
@@ -407,7 +394,7 @@ impl Parser {
                 arity(3)?;
                 Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "PULL_DYN" | "READ_FD_DYN" => {
+            "READ_FD_DYN" => {
                 arity(3)?;
                 Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -449,7 +436,7 @@ impl Parser {
                 arity(3)?;
                 Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "PUSH_DYN" | "WRITE_FD_DYN" => {
+            "WRITE_FD_DYN" => {
                 arity(3)?;
                 Instr::WriteFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -1249,12 +1236,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_pull_push_dynamic_and_legacy_fd_aliases() {
+    fn parses_legacy_fd_dyn_aliases() {
+        // F1 retired the PULL_DYN/PUSH_DYN twins; READ_FD_DYN/WRITE_FD_DYN remain.
         let program = Program::parse(
             r#"
             .text
-              PULL_DYN r1, r2, r3
-              PUSH_DYN r4, r5, r6
               READ_FD_DYN r7, r8, r9
               WRITE_FD_DYN r10, r11, r12
             "#,
@@ -1262,31 +1248,23 @@ mod tests {
         .unwrap();
         assert!(matches!(
             program.instructions[0],
-            Instr::ReadFdDyn(Reg(1), Reg(2), Reg(3))
-        ));
-        assert!(matches!(
-            program.instructions[1],
-            Instr::WriteFdDyn(Reg(4), Reg(5), Reg(6))
-        ));
-        assert!(matches!(
-            program.instructions[2],
             Instr::ReadFdDyn(Reg(7), Reg(8), Reg(9))
         ));
         assert!(matches!(
-            program.instructions[3],
+            program.instructions[1],
             Instr::WriteFdDyn(Reg(10), Reg(11), Reg(12))
         ));
     }
 
     #[test]
-    fn parses_waitable_probe_and_legacy_poll_aliases() {
+    fn parses_waitable_probe_and_legacy_poll_alias() {
+        // F1: WAITABLE_PROBE/POLL_FD take an fdN handle register (the dynamic
+        // register-operand twin and POLL_FD_DYN are retired).
         let program = Program::parse(
             r#"
             .text
               WAITABLE_PROBE r1, fd2, r3
-              WAITABLE_PROBE r4, r5, r6
               POLL_FD r7, fd8, r9
-              POLL_FD_DYN r10, r11, r12
             "#,
         )
         .unwrap();
@@ -1296,15 +1274,7 @@ mod tests {
         ));
         assert!(matches!(
             program.instructions[1],
-            Instr::WaitableProbeDyn(Reg(4), Reg(5), Reg(6))
-        ));
-        assert!(matches!(
-            program.instructions[2],
             Instr::WaitableProbe(Reg(7), FdReg(8), Reg(9))
-        ));
-        assert!(matches!(
-            program.instructions[3],
-            Instr::WaitableProbeDyn(Reg(10), Reg(11), Reg(12))
         ));
     }
 
@@ -1339,22 +1309,18 @@ mod tests {
     }
 
     #[test]
-    fn parses_await_ex_static_and_dynamic_waitables() {
+    fn parses_await_ex_static_waitable() {
+        // F1: AWAIT_EX takes an fdN handle register (the dynamic twin is retired).
         let program = Program::parse(
             r#"
             .text
               AWAIT_EX r1, fd2, r3
-              AWAIT_EX r4, r5, r6
             "#,
         )
         .unwrap();
         assert!(matches!(
             program.instructions[0],
             Instr::AwaitEx(Reg(1), FdReg(2), Reg(3))
-        ));
-        assert!(matches!(
-            program.instructions[1],
-            Instr::AwaitExDyn(Reg(4), Reg(5), Reg(6))
         ));
     }
 

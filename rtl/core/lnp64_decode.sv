@@ -175,9 +175,8 @@ module lnp64_decode (
              8'h6d: begin dec.opcode = LNP64_OP_OPEN_FD; end
              8'h6e: begin dec.opcode = LNP64_OP_FD_CLOSE; end
              8'h6f: begin dec.opcode = LNP64_OP_WAITABLE_PROBE; end
-             8'h70: begin dec.opcode = LNP64_OP_WAITABLE_PROBE; end
+             // 0x70/0x72 (dynamic waitable_probe/await_ex twins) retired in F1.
              8'h71: begin dec.opcode = LNP64_OP_AWAIT_EX; end
-             8'h72: begin dec.opcode = LNP64_OP_AWAIT_EX; end
              8'h7d: begin dec.opcode = LNP64_OP_FORK; end
              8'h7f: begin dec.opcode = LNP64_OP_EXEC; end
              8'h80: begin dec.opcode = LNP64_OP_INB; end

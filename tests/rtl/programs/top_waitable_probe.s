@@ -23,8 +23,8 @@ probe_static_ready:
   BNE r12, r20, bad
 
 probe_dynamic_ready:
-  LI r16, 4
-  WAITABLE_PROBE r17, r16, r20
+  LI r4, 4
+  WAITABLE_PROBE r17, fd4, r20
   BNE r17, r20, bad
 
 drain_and_probe_empty:
