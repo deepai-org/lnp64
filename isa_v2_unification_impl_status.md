@@ -387,63 +387,52 @@ entry. Zero call-site changes, zero corpus cost (confirming the code-size cost w
 already fully paid in F1-step-2). Live RTL decode opcodes 125 → **124**. Gate:
 clean-build cosim 35/35 byte-exact; cargo 489; Redis green; M1–M16 unaffected.
 
-## Revised tail sequencing + register-form fast path (SPEC — implement after step-3)
+## step-3 sweep — FEASIBILITY FINDING: the remaining opcodes are LIVE, not dead
 
-New tail order: **F2 (done) → step-3 legacy sweep → register-form fast path →
-EP-I-full freeze.** The register-form fast path MUST land before EP-I-full so the
-M16 endpoint engine is frozen against the final encoding (form bit included);
-freezing descriptor-only then adding the bit would re-open M16.
+Greenlit as "pure surface reduction (already-migrated opcodes, dead branches)",
+but measurement says otherwise — only the *_dyn twins (F1) and CallCapDyn (F2)
+were dead; the legacy *static* opcodes are still emitted. Evidence (compiled
+redis-server.elf + libc .c + cosim/demo .s):
 
-**Goal:** recover the per-call-site code size the descriptor form costs, *without*
-re-adding opcodes. `send`/`recv` stay single opcodes (0x83/0x84); a 1-bit `form`
-field selects operand sourcing — the `add r,r,r` vs `add r,r,imm` relationship,
-one operation with two operand encodings. Reuses the EP-I-lite `verb_form` mux:
-the form bit adds one selector value feeding the *same* shared store-load
-datapath. Operand sourcing remains the only fork (refinement #1 holds).
+| group                    | still emitted by                                              | blocker to removal                                  |
+|--------------------------|--------------------------------------------------------------|-----------------------------------------------------|
+| push / pull (0x2b/0x2c)  | libc meta/socket/time `__lnp_push`/`__lnp_pull`; LLVM ISel; Redis (2+2) | migrate those libc fns to send/recv + rebuild Redis |
+| read_fd / write_fd (0x2d/0x57) | ~20 demos (`WRITE_FD fd1` = the console-write idiom), top_waitable_probe/top_await_ex (READ_FD), 3 cargo tests | migrate emitters; keep microcode (verbs reuse it) |
+| cap_send / cap_recv (0x51/0x52) | 4 gated cosim programs, cargo cap tests, demos      | RTL verb **cap-FIFO path** (today emulator-only, EP-G) |
+| await / await_ex / waitable_probe (0x2e/0x71/0x6f) | libc poll_min; Redis (5 await); 2 gated cosim programs | RTL **wait verb** (not in RTL — EP-I-lite deferred it) |
 
-**Encoding.** `form` at instruction bit **[25]** (first free low bit, just below
-rs5[30:26]; confirm no collision with the slots-immediate convention at
-implementation time — send/recv carry no immediate, so [25] is free).
-- `form=0` descriptor form (today): `rd=result, rs1=ep, rs2=desc` (enc_rrr).
-  **Bit-for-bit unchanged** — every existing program/test stays byte-identical
-  (this is the form=0 regression guard).
-- `form=1` reg form: `rd=result, rs1=fd/ep, rs2=ptr, rs3=len` (enc_rrrr, form bit
-  set). One word, no memory descriptor build.
-- Keep ONE `Instr::Send`/`Instr::Recv` variant; add a `form` field (or a
-  `desc_or_ptr_len` enum) so the encoder picks the layout. No new Instr variants
-  (that would be IR-level surface creep).
+Consequence: the sweep **cannot precede EP-I-full** for caps/await/waitable — they
+need RTL verb cap + wait support, which is EP-I-full. push/pull need a libc→verb
+migration (+ Redis rebuild) first. read_fd/write_fd are the only group with no
+compiler emitter, but freeing them still means migrating ~20 demos' console-write
+idiom. So "F2 → step-3 → EP-I-full" is not executable as a quick sweep.
 
-**Compiler form-selection (policy in C, not ISel).** The form is chosen by *which
-libc builtin emits*: `__lnp64_send_bytes`/`__lnp64_recv_bytes` (reg form) vs
-`__lnp64_send_msg`/`__lnp64_recv_msg` (descriptor form) — a 1:1 builtin→pattern
-lowering, no operand inference in the backend. `write`/`read` → bytes builtin
-(single contiguous buffer, no caps/flags → reg form); `sendmsg`/`recvmsg`-with-
-control → msg builtin (iovec/multi-buffer, SCM_RIGHTS, or flags → descriptor
-form). These are already distinct libc functions, so no new branch. Do NOT
-implement form selection as ISel operand analysis (keeps the "extremely clean
-LLVM" goal — mechanism/policy split stays in readable C).
+**Recommended re-sequencing:** EP-I-full (extend the verb_form mux with the wait
+verb + the cap-FIFO path in RTL) **before** the bulk of step-3 — it is the
+prerequisite that unblocks 3 of the 4 groups and is needed for the freeze anyway.
+Then step-3 becomes mechanical opcode removal. The byte-fd-only groups
+(push/pull via libc migration, read_fd/write_fd via demo migration) can be done
+independently whenever, since the RTL verb byte path already covers them.
 
-**Emulator + RTL.** Extend the `verb_form` operand mux with reg-form sourcing:
-`form=1` → `fd = decode_fd_value(gpr[rs1])`, `buf_addr = gpr[rs2]`,
-`len = gpr[rs3]` (instead of `descriptor[0]`/`descriptor[8]`). Everything
-downstream (errno, result_value, the sequential pipe/SRAM/counter/timer store-
-load, the `read_fd_index`/`write_fd_index` helpers) is unchanged — a mux, not a
-second execute arm. Confirm reg-form recv writes bytes-read into result (r2)
-identically to descriptor form (observably equivalent modulo operand source).
+## Tail sequencing: step-3 legacy sweep → EP-I-full freeze (one form)
 
-**M16 proof obligation.** M16's endpoint-engine refinement must cover both forms —
-prove reg form and descriptor form produce identical endpoint state transitions
-for the same logical `(fd, buf, len)`. This is the reason it precedes EP-I-full.
+The yardstick is **# unique opcodes/types**; every opcode the sweep retires is a
+direct hit on it. Order: step-3 sweep → EP-I-full freeze. Per the feasibility
+finding above, the caps/await/waitable opcodes retire *as part of* EP-I-full
+(that step adds the RTL wait + cap-FIFO verb paths they need); the byte-fd groups
+(push/pull, read_fd/write_fd) retire via emitter migration, independent of the
+freeze.
 
-**B1 (role flips to validation).** After reg form lands: re-migrate
-`top_pipe_push_pull` to reg form and record the new B1 row (expect ~32 words —
-back to/below the static-fd form). Then re-measure the Redis+libc corpus
-before/after via the bytes-builtin and record it — now the *proof the reg form
-recovered the code size*, not a gate on whether to build it. Flat-or-better ⇒
-"fewer instructions" met with the unified model intact.
+### Rejected: register-form fast path for send/recv (do not re-propose)
 
-**Gate (unchanged).** Clean-build cosim byte-exact (form=0 programs MUST stay
-bit-identical — the regression guard), cargo, Redis, M1–M16, fresh server.
+A 1-bit `form` field on send/recv (reg form `rd/rs1=fd/rs2=ptr/rs3=len` vs the
+memory descriptor) was specced to recover the descriptor-build code size.
+**Rejected** because the B1 corpus measurement settled the question it was meant to
+answer: the Redis+libc verb migration is **+0.034% (flat)** — there is no code-size
+problem to fix. The form bit trades unification for density: it re-introduces an
+encoding form (surface) to win back instructions the corpus shows we never lost.
+Not worth it. Keep send/recv single-form (memory descriptor). Reserve only if a
+future corpus row regresses materially — which today's data says it won't.
 
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 
