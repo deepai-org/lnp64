@@ -258,7 +258,13 @@ software (Redis) already runs on them, so the legacy `_dyn` twins
 push/pull/read_fd/write_fd/cap_send/cap_recv/await*/waitable_probe* paths can be
 removed — each removal gated on Redis green + cosim byte-exact + M1–M16 green.
 
-## Collapse sequencing (corrected) + EP-I-lite plan (next)
+## Collapse sequencing (HISTORICAL — superseded; see "Resolved decisions", "Tail sequencing", and "EP-I-full plan" below for the CURRENT plan)
+
+> This section records the original EP-I-lite-era plan and is kept for the journey.
+> The live plan is: EP-I-lite (done) → F1-step-1/2 (done) → F2 (done) → **EP-I-full
+> a/b/c/d (in progress)** → byte-fd mop-up (push/pull, read_fd/write_fd; needs the
+> libc→verb migration + Redis rebuild). No register-form slot (Resolved decision
+> #4). The "EP-I-full (LAST)" / "F2 → step-3 → EP-I-full" lines below are stale.
 
 Discovery during F1: the RTL has **no verb execution** (no SEND/RECV/WAIT in
 pkg/decode/core-tile), so cosim programs can't migrate to the verbs until the RTL
@@ -290,9 +296,9 @@ runs them. Corrected order (additive → subtractive → heavyweight freeze):
    the same dispatch) against the final collapsed ISA, gated on M16 typed-trace +
    cosim.
 
-F1 status: step 1 done (0x70/0x72 freed, commit bcc16a0); step 2 done (0x3b/0x3c
-freed — see below). EP-G/EP-H done; Redis runs on the verbs. Next action: F2
-(0x4e call_cap→gate_call), then the step-3 legacy sweep.
+F1 status: step 1 done (0x70/0x72 freed, bcc16a0); step 2 done (0x3b/0x3c freed).
+F2 done (0x4e). EP-I-full-a done (wait verb in RTL). **Current next action:
+EP-I-full-b** (retire await_ex/waitable_probe; see the EP-I-full plan section).
 
 ## B1 — ISA collapse burndown (the "fewer instructions" goal, measured)
 
@@ -473,15 +479,31 @@ Sub-steps (each a gated commit — tasks #16–#19):
   Validated by `top_wait_poll.s` (poll a ready event-counter via a 1-entry
   waitset). Adds one opcode (live decode 124→125); the net reduction lands in
   b/c. Gate: flat_hex cosim 36/36 byte-exact; cargo 489; Redis green; M1+M16 green.
-- **b. Retire await/await_ex/waitable_probe (0x2e/0x71/0x6f).** Migrate
-  top_waitable_probe/top_await_ex → wait; migrate libc poll_min await fallback +
-  any cargo tests; free the opcodes + Instr variants + asm + decode. D2 + B1.
+- **b. Retire await_ex/waitable_probe (0x71/0x6f) — −2 (125→123).** These have
+  **no compiler emitter** (0 in Redis, no libc), so they free cleanly now: migrate
+  top_waitable_probe/top_await_ex → wait + the cargo tests; free the opcodes +
+  Instr variants (WaitableProbe/AwaitEx) + asm + decode + microcode. D2 + B1.
+  **`await` (0x2e) is NOT freed here** — it is still compiler-emitted (5 in Redis,
+  from `poll_min.c`'s `__lnp_await` fallback), so it joins the libc→verb migration
+  + Redis-rebuild batch (with push/pull/read_fd/write_fd).
 - **c. RTL cap-FIFO verb send/recv + retire cap_send/cap_recv (0x51/0x52).**
   Extend the verb send/recv path with the cap-FIFO (caps_len≠0): resolve handle on
   send / install on recv, mirroring emulator EP-G; single-cap suffices for cosim.
   Migrate top_cap_* + cargo cap tests → send/recv-with-caps; free 0x51/0x52. D2 + B1.
-- **d. Freeze M16** against the final descriptor encoding; confirm it covers both
+- **d. Freeze M16** against the final descriptor encoding. **Must prove + freeze
+  the multi-entry + blocking wait** (per-entry revents writeback over N entries,
+  parking/wake) in the engine — single-entry-non-blocking RTL is the fast path,
+  NOT the ceiling; real poll/select-over-many-fds-with-block is the common case and
+  must be proven-and-frozen, not deferred indefinitely. Confirm M16 covers both
   single-entry (RTL) and general (engine) transitions. Mark EP-I frozen.
+
+**Open rung — A1 finite-timeout wakeup (track, don't drop):** the executing `wait`
+(emulator + RTL) treats a nonzero finite timeout as block-until-edge (no timed
+wakeup); the RTL cosim path is non-blocking (timeout=0). Real poll/select/
+nanosleep finite timeouts need a genuine timed unblock returning revents=0 on
+expiry. Covered by the M16 blocking model (d) for the engine; the emulator timed
+wakeup is the A1 backlog item — keep it explicit, not silently absent behind a
+green gate.
 
 ## EP-I-lite: DONE (byte-fd send/recv on the shared fd datapath)
 
