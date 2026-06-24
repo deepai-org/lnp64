@@ -2187,7 +2187,8 @@ impl Machine {
             0x6c => Instr::Mprotect(a, b, c),
             0x6d => Instr::OpenFdDyn(a, b, c),
             0x6e => Instr::FdCloseDyn(a),
-            0x6f => Instr::WaitableProbe(a, FdReg(b.0), c),
+            // 0x6f (waitable_probe) retired in EP-I-full-b — the wait verb's
+            // single-entry non-blocking poll (revents in the entry) subsumes it.
             // 0x70/0x72 (WaitableProbeDyn/AwaitExDyn) retired in F1 — the static
             // waitable_probe/await_ex (GPR-handle) and the `wait` verb cover them.
             0x71 => Instr::AwaitEx(a, FdReg(b.0), c),
@@ -2915,16 +2916,6 @@ impl Machine {
                 let argblock = self.read_reg(argblock)?;
                 match self.decode_fd_value(fd_value) {
                     Ok(fd) => self.await_ex_index(result, fd, argblock)?,
-                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
-                };
-            }
-            Instr::WaitableProbe(result, fd, events) => {
-                Self::ensure_result_reg_writable(result)?;
-                // ISA-v2: fd operand is a GPR holding the fd handle value.
-                let fd_value = self.read_reg(Reg(fd.0))?;
-                let events = self.read_reg(events)?;
-                match self.decode_fd_value(fd_value) {
-                    Ok(fd) => self.waitable_probe_index(result, fd, events)?,
                     Err(errno) => self.complete_reg_negative_errno(result, errno)?,
                 };
             }
@@ -10485,17 +10476,6 @@ impl Machine {
         result
     }
 
-    fn waitable_probe_index(&mut self, result: Reg, fd: usize, events: u64) -> Result<(), String> {
-        if fd >= FDR_COUNT {
-            return self.complete_reg_negative_errno(result, 9);
-        }
-        if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_POLL) {
-            return self.complete_reg_negative_errno(result, errno);
-        }
-        let revents = self.poll_fd_index_mask_raw(fd, events)?;
-        self.complete_reg_ok(result, revents)
-    }
-
     fn await_ex_index(&mut self, result: Reg, fd: usize, argblock: u64) -> Result<(), String> {
         let mode = self.load_u64_offset(argblock, 0)?;
         let mask = self.load_u64_offset(argblock, 8)?;
@@ -12137,6 +12117,24 @@ mod tests {
         write_msg_desc(machine, desc, buf, len, 0, 0);
         machine.thread_mut().unwrap().regs[26] = desc;
         machine.exec(Instr::Send(Reg(2), ep, Reg(26))).unwrap();
+    }
+
+    // EP-I-full-b: probe one fd's readiness via the wait verb (1-entry waitset,
+    // non-blocking) — the replacement for the retired waitable_probe. result gets
+    // the ready count; the entry's revents (POLLIN / 0 / POLLNVAL) is written back
+    // to memory and returned here, so the readiness facts the old probe asserted
+    // are preserved, now in wait's encoding.
+    fn wait_probe(machine: &mut Machine, result: Reg, handle: u64, events: u64) -> Result<bool, String> {
+        let entries = ARG_BASE + 0x7000;
+        let waitset = ARG_BASE + 0x7080;
+        write_waitset(machine, waitset, entries, &[(handle, events)]);
+        machine.thread_mut().unwrap().regs[26] = waitset;
+        machine.thread_mut().unwrap().regs[27] = 0; // timeout = 0 (non-blocking)
+        machine.exec(Instr::Wait(result, Reg(26), Reg(27)))
+    }
+
+    fn wait_revents(machine: &mut Machine) -> u64 {
+        machine.load_u64(ARG_BASE + 0x7000 + WAITSET_ENTRY_REVENTS).unwrap()
     }
 
     #[test]
@@ -20967,66 +20965,39 @@ mod tests {
     }
 
     #[test]
-    fn poll_fd_rejects_locked_result_register_without_errno_side_effects() {
+    fn wait_rejects_locked_result_register_without_errno_side_effects() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 3, 4);
-        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
         machine.set_errno(123).unwrap();
 
-        let err = machine
-            .exec(Instr::WaitableProbe(Reg(31), FdReg(3), Reg(2)))
-            .unwrap_err();
+        // wait checks result-reg writability before any state change, so a locked
+        // result reg errors without touching errno (mirrors the retired probe).
+        let err = wait_probe(&mut machine, Reg(31), 3, POLLIN_MASK).unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
         assert_eq!(machine.process().unwrap().errno, 123);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
-
-        machine.thread_mut().unwrap().regs[4] = 3;
-        machine.thread_mut().unwrap().regs[5] = POLLIN_MASK;
-        machine.set_errno(124).unwrap();
-
-        let err = machine
-            .exec(Instr::WaitableProbe(Reg(31), FdReg(4), Reg(5)))
-            .unwrap_err();
-
-        assert!(err.contains("hardware-locked stack pointer"), "{err}");
-        assert_eq!(machine.process().unwrap().errno, 124);
-        assert!(machine.fd_waiters.is_empty());
-        assert!(machine.ready.contains(&1));
     }
 
     #[test]
-    fn poll_fd_success_clears_errno() {
+    fn wait_success_clears_errno() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 3, 4);
-        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
-        machine.thread_mut().unwrap().regs[3] = 3;
         machine.set_errno(123).unwrap();
 
-        machine
-            .exec(Instr::WaitableProbe(Reg(5), FdReg(3), Reg(2)))
-            .unwrap();
+        // Pipe reader with no data: not ready -> 0 ready, revents 0, errno cleared.
+        wait_probe(&mut machine, Reg(5), 3, POLLIN_MASK).unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[5], 0);
-        assert_eq!(machine.process().unwrap().errno, 0);
-
-        machine.thread_mut().unwrap().regs[6] = 3;
-        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
-        machine.set_errno(124).unwrap();
-
-        machine
-            .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
-            .unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(wait_revents(&mut machine), 0);
         assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
-    fn waitable_probe_reports_readiness_without_parking() {
+    fn wait_reports_readiness_without_parking() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         {
@@ -21037,66 +21008,42 @@ mod tests {
             };
             process.fd_capabilities[3] = FdCapability::full(3);
         }
-        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
-        machine.thread_mut().unwrap().regs[3] = 3;
         machine.set_errno(123).unwrap();
 
-        assert!(
-            machine
-                .exec(Instr::WaitableProbe(Reg(5), FdReg(3), Reg(2)))
-                .unwrap()
-        );
+        // Ready event-counter: 1 ready, revents=POLLIN, returns without parking.
+        assert!(wait_probe(&mut machine, Reg(5), 3, POLLIN_MASK).unwrap());
 
-        assert_eq!(machine.thread().unwrap().regs[5], POLLIN_MASK);
-        assert_eq!(machine.process().unwrap().errno, 0);
-        assert!(machine.fd_waiters.is_empty());
-        assert!(machine.ready.contains(&1));
-
-        machine.thread_mut().unwrap().regs[6] = 3;
-        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
-        machine.set_errno(124).unwrap();
-
-        assert!(
-            machine
-                .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
-                .unwrap()
-        );
-
-        assert_eq!(machine.thread().unwrap().regs[8], POLLIN_MASK);
+        assert_eq!(machine.thread().unwrap().regs[5], 1);
+        assert_eq!(wait_revents(&mut machine), POLLIN_MASK);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
     }
 
     #[test]
-    fn waitable_probe_failures_return_negative_architectural_errno() {
+    fn wait_reports_pollnval_for_bad_or_unpollable_fd() {
+        // wait subsumes waitable_probe's failure reporting: instead of a negative
+        // architectural errno in the result reg, a bad/closed/unpollable fd is
+        // reported as POLLNVAL in the entry's revents (and counts toward the ready
+        // count, per POSIX poll). errno stays 0 — per-entry status lives in revents.
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
-        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
-        machine.thread_mut().unwrap().regs[7] = 7;
 
-        machine
-            .exec(Instr::WaitableProbe(Reg(5), FdReg(7), Reg(2)))
-            .unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[5], 0u64.wrapping_sub(9));
-        assert_eq!(machine.process().unwrap().errno, 9);
+        // Bad fd (closed slot 7).
+        wait_probe(&mut machine, Reg(5), 7, POLLIN_MASK).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 1);
+        assert_eq!(wait_revents(&mut machine), POLLNVAL_MASK);
+        assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
 
+        // Valid fd lacking the POLL right.
         create_pipe_pair(&mut machine, 3, 4);
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
-        machine.thread_mut().unwrap().regs[6] = 3;
-        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
-
-        machine
-            .exec(Instr::WaitableProbe(Reg(8), FdReg(6), Reg(7)))
-            .unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[8], u64::MAX);
-        assert_eq!(machine.process().unwrap().errno, 1);
-        assert!(machine.fd_waiters.is_empty());
-        assert!(machine.ready.contains(&1));
+        wait_probe(&mut machine, Reg(8), 3, POLLIN_MASK).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], 1);
+        assert_eq!(wait_revents(&mut machine), POLLNVAL_MASK);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]

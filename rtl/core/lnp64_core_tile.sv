@@ -1418,17 +1418,6 @@ module lnp64_core_tile #(
                         flat_retire_errno_value = LNP64_ERR_OK;
                     end
                 end
-                LNP64_OP_WAITABLE_PROBE: begin
-                    if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                        flat_retire_errno_value = LNP64_ERR_EBADF;
-                    end else if (fdr_revoked[await_fd]) begin
-                        flat_retire_errno_value = RTL_ERR_ESTALE;
-                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                        flat_retire_errno_value = LNP64_ERR_EPERM;
-                    end else begin
-                        flat_retire_errno_value = LNP64_ERR_OK;
-                    end
-                end
                 LNP64_OP_WAIT: begin
                     // Non-blocking poll: ready count (incl. POLLNVAL entries) is
                     // OK; an implausibly large set is EINVAL. Per-entry status is
@@ -1727,19 +1716,6 @@ module lnp64_core_tile #(
                     if (!await_fd_in_range || !fdr_valid[await_fd] || fdr_revoked[await_fd] ||
                         ((fdr_rights[await_fd] & 64'd16) == 64'd0) || !await_fd_ready) begin
                         result = 64'hffff_ffff_ffff_ffff;
-                    end else begin
-                        result = 64'd0;
-                    end
-                end
-                LNP64_OP_WAITABLE_PROBE: begin
-                    if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                        result = negative_errno(LNP64_ERR_EBADF);
-                    end else if (fdr_revoked[await_fd]) begin
-                        result = negative_errno(RTL_ERR_ESTALE);
-                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                        result = negative_errno(LNP64_ERR_EPERM);
-                    end else if (await_fd_ready && ((gpr[dec.rs2] & 64'd1) != 64'd0)) begin
-                        result = 64'd1;
                     end else begin
                         result = 64'd0;
                     end
@@ -3811,28 +3787,6 @@ module lnp64_core_tile #(
                                 end else if (!await_fd_ready) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
-                                end else begin
-                                    gpr[dec.rd] <= 64'd0;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_WAITABLE_PROBE: begin
-                                if (!await_fd_in_range || !fdr_valid[await_fd]) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EBADF};
-                                    errno_reg <= LNP64_ERR_EBADF;
-                                end else if (fdr_revoked[await_fd]) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, RTL_ERR_ESTALE};
-                                    errno_reg <= RTL_ERR_ESTALE;
-                                end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
-                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
-                                    errno_reg <= LNP64_ERR_EPERM;
-                                end else if (await_fd_ready && ((gpr[dec.rs2] & 64'd1) != 64'd0)) begin
-                                    gpr[dec.rd] <= 64'd1;
-                                    errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;

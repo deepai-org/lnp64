@@ -332,10 +332,6 @@ impl Parser {
                 arity(3)?;
                 Instr::AwaitEx(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
             }
-            "WAITABLE_PROBE" | "POLL_FD" => {
-                arity(3)?;
-                Instr::WaitableProbe(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
-            }
             "ALLOC" => {
                 arity(2)?;
                 Instr::Alloc(reg(&args[0])?, reg(&args[1])?)
@@ -1251,28 +1247,6 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::Wait(Reg(7), Reg(5), Reg(6))
-        ));
-    }
-
-    #[test]
-    fn parses_waitable_probe_and_legacy_poll_alias() {
-        // F1: WAITABLE_PROBE/POLL_FD take an fdN handle register (the dynamic
-        // register-operand twin and POLL_FD_DYN are retired).
-        let program = Program::parse(
-            r#"
-            .text
-              WAITABLE_PROBE r1, fd2, r3
-              POLL_FD r7, fd8, r9
-            "#,
-        )
-        .unwrap();
-        assert!(matches!(
-            program.instructions[0],
-            Instr::WaitableProbe(Reg(1), FdReg(2), Reg(3))
-        ));
-        assert!(matches!(
-            program.instructions[1],
-            Instr::WaitableProbe(Reg(7), FdReg(8), Reg(9))
         ));
     }
 

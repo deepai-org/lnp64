@@ -1,4 +1,9 @@
 .text
+# EP-I-full-b: readiness probing via the wait verb (waitable_probe 0x6f retired).
+# A single-entry waitset polls one fd; the ready count lands in rd and revents in
+# entry[16]. Covers the ready case (POLLIN) and the bad-fd case (POLLNVAL=32,
+# which counts toward the ready count per POSIX poll) — the failure the retired
+# probe expressed as a negative errno is now POLLNVAL in revents.
   LI r29, -1
   LI r10, 0
   LI r20, 1
@@ -17,33 +22,33 @@ create_ready_event_counter:
   OBJECT_CTL r11, r10
   BEQ r11, r29, bad
 
-probe_static_ready:
-  LI r4, 4
-  WAITABLE_PROBE r12, fd4, r20
-  BNE r12, r20, bad
+build_waitset:
+  LI r5, 128             # entries_ptr
+  LI r7, 96              # waitset
+  LI r8, 0               # timeout = 0 (non-blocking)
+  ST [r7, 0], r5         # waitset.entries_ptr
+  ST [r7, 8], r20        # waitset.count = 1
 
-probe_dynamic_ready:
-  LI r4, 4
-  WAITABLE_PROBE r17, fd4, r20
-  BNE r17, r20, bad
+poll_ready:
+  LI r6, 4               # handle = ready event-counter fd 4
+  ST [r5, 0], r6
+  ST [r5, 8], r20        # events = POLLIN
+  ST [r5, 16], r0        # clear revents
+  WAIT r2, r7, r8
+  BNE r2, r20, bad       # 1 ready
+  LD r9, [r5, 16]
+  BNE r9, r20, bad       # revents = POLLIN
 
-drain_and_probe_empty:
-  LI r12, 80
-  LI r13, 8
-  READ_FD fd4, r12, r13
-  BNE r1, r13, bad
-  LI r4, 4
-  WAITABLE_PROBE r18, fd4, r20
-  BNE r18, r0, bad
-
-probe_closed_fd_error:
-  LI r7, 7
-  WAITABLE_PROBE r19, fd7, r20
-  LI r1, -9
-  BNE r19, r1, bad
-  ERRNO_GET r21
-  LI r1, 9
-  BNE r21, r1, bad
+poll_bad_fd_pollnval:
+  LI r6, 7               # handle = closed/unallocated fd 7
+  ST [r5, 0], r6
+  ST [r5, 8], r20        # events = POLLIN
+  ST [r5, 16], r0
+  WAIT r2, r7, r8
+  BNE r2, r20, bad       # POLLNVAL counts as 1 ready
+  LD r9, [r5, 16]
+  LI r1, 32              # POLLNVAL
+  BNE r9, r1, bad
 
 done:
   EXIT r0

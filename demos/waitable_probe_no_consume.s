@@ -11,6 +11,8 @@ ok_msg: .string "ok waitable_probe_no_consume\n"
 obj: .zero 72
 payload: .zero 8
 out: .zero 8
+ws: .zero 16
+wentry: .zero 24
 
 .text
   LI r29, -1
@@ -40,10 +42,22 @@ push_payload:
   WRITE_FD fd4, r12, r13
   BNE r1, r13, bad
 
+build_waitset:
+  LI r5, ws
+  LI r6, wentry
+  LI r8, 0               # timeout = 0 (non-blocking)
+  ST [r5, 0], r6         # waitset.entries_ptr
+  ST [r5, 8], r20        # waitset.count = 1
+  LI r1, 3
+  ST [r6, 0], r1         # entry.handle = fd3 reader
+  ST [r6, 8], r20        # entry.events = POLLIN
+
 probe_ready_twice:
-  WAITABLE_PROBE r14, fd3, r20
+  ST [r6, 16], r0        # clear revents (probing must not consume)
+  WAIT r14, r5, r8
   BNE r14, r20, bad
-  WAITABLE_PROBE r15, fd3, r20
+  ST [r6, 16], r0
+  WAIT r15, r5, r8
   BNE r15, r20, bad
 
 pull_after_probes:
@@ -55,7 +69,8 @@ pull_after_probes:
   BNE r17, r18, bad
 
 probe_empty_after_pull:
-  WAITABLE_PROBE r19, fd3, r20
+  ST [r6, 16], r0
+  WAIT r19, r5, r8
   BNE r19, r0, bad
 
 done:
