@@ -513,8 +513,17 @@ Sub-steps (each a gated commit — tasks #16–#19):
   cap-path delegates to (frees the ISA *mnemonic* surface, keeps the binary opcode +
   M1 coupling — "removing the opcode ≠ removing the behavior"); (c) defer cap
   retirement, leaving cap_send/cap_recv as the M1-anchored cap primitives. Until
-  this is decided, **0x51/0x52 stay** and the byte-fd libc-batch (push/pull/read_fd/
-  write_fd/await 0x2e) proceeds independently.
+  this is decided, **0x51/0x52 stay**.
+
+  **The fork is broader than caps — it also blocks push/pull.** The same M1
+  contract pins `push`→PUSH, `pull`→PULL, `reject_stale`→PULL, `reject_full`→PUSH
+  (covered_real_instruction_ops + the checker's required `arch_opcode in top_text`).
+  So retiring `cap_send/cap_recv` **and** `push/pull` (0x51/0x52/0x2b/0x2c) all hit
+  the same M1 frozen-contract re-pointing decision — this is the central formal
+  decision for finishing the Phase-3 collapse. Independent of it (NOT M1-covered):
+  `read_fd/write_fd` (0x2d/0x57 — binary opcodes freeable via ~20 demo migrations;
+  microcode stays for the verbs) and `await` (0x2e — needs the poll_min→wait libc
+  migration + Redis rebuild). Those can proceed without the M1 decision.
 - **d. Freeze M16** against the final descriptor encoding. **Must prove + freeze
   the multi-entry + blocking wait** (per-entry revents writeback over N entries,
   parking/wake) in the engine — single-entry-non-blocking RTL is the fast path,
