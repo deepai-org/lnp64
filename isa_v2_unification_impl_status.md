@@ -489,10 +489,32 @@ Sub-steps (each a gated commit — tasks #16–#19):
   **`await` (0x2e) is NOT freed here** — it is still compiler-emitted (5 in Redis,
   from `poll_min.c`'s `__lnp_await` fallback), so it joins the libc→verb migration
   + Redis-rebuild batch (with push/pull/read_fd/write_fd).
-- **c. RTL cap-FIFO verb send/recv + retire cap_send/cap_recv (0x51/0x52).**
-  Extend the verb send/recv path with the cap-FIFO (caps_len≠0): resolve handle on
-  send / install on recv, mirroring emulator EP-G; single-cap suffices for cosim.
-  Migrate top_cap_* + cargo cap tests → send/recv-with-caps; free 0x51/0x52. D2 + B1.
+- **c. RTL cap-FIFO verb send/recv + retire cap_send/cap_recv (0x51/0x52) —
+  STOP-AND-FLAG: frozen-contract fork (M1 capability refinement).** The emulator
+  side is mechanical (cap_send ≡ send-with-caps: `cap_send_inner` pushes the src
+  cap's `CapabilityPayload` to the channel cap FIFO, exactly like
+  `ep_send_bytefd_caps`). But the RTL cap path is **M1-refinement-coupled** and the
+  M1 *contract* hard-pins capability coverage to the CAP_SEND/CAP_RECV **arch
+  opcodes**:
+  - `check_rtl_top_level_program_manifest.py` `require(arch_opcode in top_text)` +
+    `require(arch_opcode in smoke_text)` for `LNP64_OP_CAP_SEND/CAP_RECV`
+    (M1_TOP_LEVEL_COVERED_KEYS), and the manifest `covered_real_instruction_ops`
+    entries pin `{arch_opcode, commit_op, lean_step=capSend/capRecv}`.
+  - the Lean model (`M1TransitionInvariantModel`) has `capSend`/`capRecv`
+    transition steps; the witness/Lean gates prove cap commits decode under them.
+  The M1 *proof* itself is commit-based (`LNP64_M1_COMMIT_CAP_SEND/RECV`, opcode-
+  agnostic), so a verb that emits the same cap commit keeps M1 green — but retiring
+  the arch opcodes breaks the contract's required opcode↔commit↔lean coupling.
+  **Decision needed (frozen contract):** how does the M1 capability refinement
+  re-couple when cap transfer becomes send/recv-with-caps? Options: (a) re-point
+  the whole coupling (RTL verb emits the cap commits; manifest covered-ops + checker
+  + Lean steps reference the verb path) — preserves the proof, re-architects the
+  coupling; (b) keep cap_send/cap_recv as M1-proven RTL micro-primitives the verb
+  cap-path delegates to (frees the ISA *mnemonic* surface, keeps the binary opcode +
+  M1 coupling — "removing the opcode ≠ removing the behavior"); (c) defer cap
+  retirement, leaving cap_send/cap_recv as the M1-anchored cap primitives. Until
+  this is decided, **0x51/0x52 stay** and the byte-fd libc-batch (push/pull/read_fd/
+  write_fd/await 0x2e) proceeds independently.
 - **d. Freeze M16** against the final descriptor encoding. **Must prove + freeze
   the multi-entry + blocking wait** (per-entry revents writeback over N entries,
   parking/wake) in the engine — single-entry-non-blocking RTL is the fast path,
